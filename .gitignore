@@ -1,0 +1,12 @@
+log/
+build/
+install/
+*/.vscode/
+.vscode/
+src/asv_control/scripts/acados/*.json
+src/asv_control/scripts/acados/__pycache__
+src/asv_control/scripts/acados/c_generated_code_*
+*.engine
+*.onnx
+*.deb
+*.whl
