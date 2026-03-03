@@ -9,14 +9,17 @@ struct State {
   double u, v, r;
 };
 
+struct Azimuth {
+  double force0, force1, ang0, ang1; 
+};
+
 class DynamicModel {
  public:
   DynamicModel();
   DynamicModel(const Eigen::Vector3d& pose);
 
-  State update(double left_thruster, double right_thruster);
-  State update_with_perturb(double left_thruster, double right_thruster,
-                            const Eigen::Vector3d& nu_c);
+  State update(Azimuth input);
+  State update_with_perturb(Azimuth input, const Eigen::Vector3d& nu_c);
   static double wrap_angle(double angle);
 
  private:
@@ -29,7 +32,8 @@ class DynamicModel {
       Y_r_dot = 0,                         // Added masses param
       N_r_dot = 1748950469,                // Added masses param
       Iz = 5829430000,                     // Moment of inertia
-      B = 20.0;
+      lx0 = 61.1,                          // First thruster x-axis distance
+      lx1 = -61.1;                          // Second thruster x-axis distance
 
   // Damping coefficients
   constexpr static double Xuu = -7057.485120, Yvv = -3890570.407734,

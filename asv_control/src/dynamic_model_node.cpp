@@ -1,29 +1,26 @@
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/transform_broadcaster.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "rclcpp/rclcpp.hpp"
-
+#include "asv_control/model/dynamic_model.h"
+#include "asv_interfaces/msg/thrust.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
-
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
-
+#include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
-
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <tf2_ros/transform_broadcaster.h>
-
-#include "asv_control/model/dynamic_model.h"
 
 using namespace std::chrono_literals;
 
@@ -44,16 +41,11 @@ class DynamicModelNode : public rclcpp::Node {
                           1.0 - 2.0 * (q.y * q.y + q.z * q.z))}};
         });
 
-    left_thruster_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-        "usv/left_thruster", 10, [this](const std_msgs::msg::Float64& msg) {
-          Tport = msg.data;
-          last_tport_msg = this->get_clock()->now();
-        });
-
-    right_thruster_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-        "usv/right_thruster", 10, [this](const std_msgs::msg::Float64& msg) {
-          Tstbd = msg.data;
-          last_tstbd_msg = this->get_clock()->now();
+    thrust_sub_ = this->create_subscription<asv_interfaces::msg::Thrust>(
+        "asv/thrust", 10, [this](const asv_interfaces::msg::Thrust& msg) {
+          thrust_ = Azimuth{msg.force0, msg.force1, msg.ang0,
+                            msg.ang1};
+          last_thrust_msg = this->get_clock()->now();
         });
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose2D>(
@@ -72,23 +64,18 @@ class DynamicModelNode : public rclcpp::Node {
     update_timer_ = this->create_wall_timer(
         10ms, std::bind(&DynamicModelNode::update, this));
 
-    last_tport_msg = this->get_clock()->now();
-    last_tstbd_msg = this->get_clock()->now();
+    last_thrust_msg = this->get_clock()->now();
   }
 
  protected:
   void update() {
     // 200 ms of no reception
-    if (this->get_clock()->now() - last_tport_msg >
+    if (this->get_clock()->now() - last_thrust_msg >
         rclcpp::Duration(0, 200 * 1e6)) {
-      Tport = 0.0;
-    }
-    if (this->get_clock()->now() - last_tstbd_msg >
-        rclcpp::Duration(0, 200 * 1e6)) {
-      Tstbd = 0.0;
+      thrust_ = Azimuth{0, 0, 0, 0};
     }
 
-    State out = model.update(Tport, Tstbd);
+    State out = model.update(thrust_);
 
     geometry_msgs::msg::Pose2D pose;
     pose.x = out.x;
@@ -103,18 +90,11 @@ class DynamicModelNode : public rclcpp::Node {
     odom.pose.pose.orientation = tf2::toMsg(q);
 
     geometry_msgs::msg::Vector3 velMsg;
-    velMsg.x = out.u;
-    velMsg.y = out.v;
-    velMsg.z = out.r;
-    odom.twist.twist.linear.x = out.u;
-    odom.twist.twist.linear.y = out.v;
-    odom.twist.twist.linear.z = 0;
-    odom.twist.twist.angular.x = 0;
-    odom.twist.twist.angular.y = 0;
-    odom.twist.twist.angular.z = out.r;
+    odom.twist.twist.linear.x = velMsg.x = out.u;
+    odom.twist.twist.linear.y = velMsg.y = out.v;
+    odom.twist.twist.angular.z = velMsg.z = out.r;
 
-    pose_stamped_tmp_.pose.position.x = pose.x;
-    pose_stamped_tmp_.pose.position.y = pose.y;
+    pose_stamped_tmp_.pose = odom.pose.pose;
     pose_path.poses.push_back(pose_stamped_tmp_);
     if (pose_path.poses.size() > 1000) {
       pose_path.poses.erase(pose_path.poses.begin(),
@@ -123,7 +103,7 @@ class DynamicModelNode : public rclcpp::Node {
 
     pose_path.header.stamp = this->get_clock()->now();
     odom.header.stamp = this->get_clock()->now();
-    
+
     pose_pub_->publish(pose);
     odom_pub_->publish(odom);
     local_vel_pub_->publish(velMsg);
@@ -139,18 +119,17 @@ class DynamicModelNode : public rclcpp::Node {
 
   rclcpp::TimerBase::SharedPtr update_timer_;
 
-  rclcpp::Time last_tport_msg, last_tstbd_msg;
+  rclcpp::Time last_tport_msg, last_tstbd_msg, last_thrust_msg;
 
   geometry_msgs::msg::PoseStamped pose_stamped_tmp_;
   nav_msgs::msg::Path pose_path;
   nav_msgs::msg::Odometry odom;
 
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr left_thruster_sub_,
-      right_thruster_sub_;
+  rclcpp::Subscription<asv_interfaces::msg::Thrust>::SharedPtr thrust_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
       initial_pose_sub_;
 
-  double Tport{0}, Tstbd{0};
+  Azimuth thrust_;
 
   DynamicModel model{Eigen::Vector3d{0, 0, 0}};
 

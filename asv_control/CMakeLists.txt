@@ -18,6 +18,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(usv_interfaces REQUIRED)
+find_package(asv_interfaces REQUIRED)
 
 set(DEPENDENCIES
   ament_cmake
@@ -32,6 +33,7 @@ set(DEPENDENCIES
   Eigen3
   tf2_geometry_msgs
   usv_interfaces
+  asv_interfaces
 )
 
 add_executable(dynamic_model_node 
@@ -44,6 +46,12 @@ ament_target_dependencies(dynamic_model_node ${DEPENDENCIES})
 install(TARGETS
   dynamic_model_node
   DESTINATION lib/${PROJECT_NAME})
+
+# Install Python executables
+install(PROGRAMS
+  scripts/teleop_xbox_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
