@@ -12,6 +12,7 @@
 #include "asv_control/model/dynamic_model.h"
 #include "asv_interfaces/msg/thrust.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
+#include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
@@ -43,28 +44,31 @@ class DynamicModelNode : public rclcpp::Node {
 
     thrust_sub_ = this->create_subscription<asv_interfaces::msg::Thrust>(
         "asv/thrust", 10, [this](const asv_interfaces::msg::Thrust& msg) {
-          thrust_ = Azimuth{msg.force0, msg.force1, msg.ang0,
-                            msg.ang1};
+          thrust_ = Azimuth{msg.force0, msg.force1, msg.ang0, msg.ang1};
           last_thrust_msg = this->get_clock()->now();
         });
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose2D>(
-        "usv/state/pose", 10);
+        "asv/state/pose", 10);
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Vector3>(
-        "usv/state/velocity", 10);
+        "asv/state/velocity", 10);
     odom_pub_ =
-        this->create_publisher<nav_msgs::msg::Odometry>("usv/state/odom", 10);
+        this->create_publisher<nav_msgs::msg::Odometry>("asv/state/odom", 10);
     pose_path_pub_ =
-        this->create_publisher<nav_msgs::msg::Path>("usv/pose_path", 10);
+        this->create_publisher<nav_msgs::msg::Path>("asv/pose_path", 10);
+    azimuth_conf_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
+        "/azimuth/conf", 10);
 
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     odom.header.frame_id = "world";
-    pose_stamped_tmp_.header = pose_path.header = odom.header;
+    azimuth_conf_msg.header =       //
+        pose_stamped_tmp_.header =  //
+        pose_path.header =          //
+        odom.header;
+    last_thrust_msg = this->get_clock()->now();
 
     update_timer_ = this->create_wall_timer(
         10ms, std::bind(&DynamicModelNode::update, this));
-
-    last_thrust_msg = this->get_clock()->now();
   }
 
  protected:
@@ -81,13 +85,8 @@ class DynamicModelNode : public rclcpp::Node {
     pose.x = out.x;
     pose.y = out.y;
     pose.theta = out.psi;
-
-    tf2::Quaternion q;
-    q.setRPY(0, 0, out.psi);
-
-    odom.pose.pose.position.x = out.x;
-    odom.pose.pose.position.y = out.y;
-    odom.pose.pose.orientation = tf2::toMsg(q);
+    eta << out.x, out.y, out.psi;
+    odom.pose.pose = v2p(eta);
 
     geometry_msgs::msg::Vector3 velMsg;
     odom.twist.twist.linear.x = velMsg.x = out.u;
@@ -101,27 +100,40 @@ class DynamicModelNode : public rclcpp::Node {
                             pose_path.poses.begin() + 1);
     }
 
-    pose_path.header.stamp = this->get_clock()->now();
-    odom.header.stamp = this->get_clock()->now();
+    pose_path.header.stamp =             //
+        odom.header.stamp =              //
+        azimuth_conf_msg.header.stamp =  //
+        this->get_clock()->now();
+
+    azimuth_conf_msg.poses.clear();
+    if (thrust_.force0 > 1e-3)
+      azimuth_conf_msg.poses.push_back(
+          v2p(rotate(forward(eta, model.lx0), thrust_.ang0)));
+    if (thrust_.force1 > 1e-3)
+      azimuth_conf_msg.poses.push_back(
+          v2p(rotate(forward(eta, model.lx1), thrust_.ang1)));
 
     pose_pub_->publish(pose);
     odom_pub_->publish(odom);
     local_vel_pub_->publish(velMsg);
     pose_path_pub_->publish(pose_path);
+    azimuth_conf_pub_->publish(azimuth_conf_msg);
     tf_broadcast(odom);
   }
 
  private:
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr azimuth_conf_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Pose2D>::SharedPtr pose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr local_vel_pub_;
-  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pose_path_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pose_path_pub_;
 
   rclcpp::TimerBase::SharedPtr update_timer_;
 
   rclcpp::Time last_tport_msg, last_tstbd_msg, last_thrust_msg;
 
   geometry_msgs::msg::PoseStamped pose_stamped_tmp_;
+  geometry_msgs::msg::PoseArray azimuth_conf_msg;
   nav_msgs::msg::Path pose_path;
   nav_msgs::msg::Odometry odom;
 
@@ -130,7 +142,7 @@ class DynamicModelNode : public rclcpp::Node {
       initial_pose_sub_;
 
   Azimuth thrust_;
-
+  Eigen::Vector3d eta;
   DynamicModel model{Eigen::Vector3d{0, 0, 0}};
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
@@ -139,12 +151,33 @@ class DynamicModelNode : public rclcpp::Node {
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
     t.header.frame_id = "world";
-    t.child_frame_id = "usv";
+    t.child_frame_id = "asv";
 
     t.transform.translation.x = msg.pose.pose.position.x;
     t.transform.translation.y = msg.pose.pose.position.y;
     t.transform.rotation = msg.pose.pose.orientation;
     tf_broadcaster->sendTransform(t);
+  }
+
+  Eigen::Vector3d forward(const Eigen::Vector3d& p, double d) {
+    Eigen::Vector3d out;
+    out << std::cos(p.z()), std::sin(p.z()), 0.0;
+    return p + d * out;
+  }
+
+  Eigen::Vector3d rotate(const Eigen::Vector3d& p, double ang) {
+    return Eigen::Vector3d{p.x(), p.y(), model.wrap_angle(p.z() + ang)};
+  }
+
+  geometry_msgs::msg::Pose v2p(const Eigen::Vector3d& vec) {
+    geometry_msgs::msg::Pose out;
+    tf2::Quaternion q;
+    q.setRPY(0, 0, vec.z());
+
+    out.position.x = vec.x();
+    out.position.y = vec.y();
+    out.orientation = tf2::toMsg(q);
+    return out;
   }
 };
 

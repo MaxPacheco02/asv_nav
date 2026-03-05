@@ -24,7 +24,7 @@ class TeleopControl(Node):
         self.thrust_msg = Thrust()
         
         # PWM output limits (thruster pair signals)
-        self.max_pwm = 2222224.5896 # maximum PWM
+        self.max_pwm = 222224.5896 # maximum PWM
 
         self.timer = self.create_timer(0.01,
                                        self.timer_callback)

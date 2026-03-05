@@ -10,7 +10,7 @@ struct State {
 };
 
 struct Azimuth {
-  double force0, force1, ang0, ang1; 
+  double force0, force1, ang0, ang1;
 };
 
 class DynamicModel {
@@ -18,9 +18,11 @@ class DynamicModel {
   DynamicModel();
   DynamicModel(const Eigen::Vector3d& pose);
 
-  State update(Azimuth input);
-  State update_with_perturb(Azimuth input, const Eigen::Vector3d& nu_c);
+  State update(Azimuth u);
+  State update_with_perturb(Azimuth u, const Eigen::Vector3d& nu_c);
   static double wrap_angle(double angle);
+  constexpr static double lx0 = 61.1,  // First thruster x-axis distance
+      lx1 = -61.1;                     // Second thruster x-axis distance
 
  private:
   // Model parameters
@@ -31,9 +33,9 @@ class DynamicModel {
       Y_v_dot = 3780505,                   // Added masses param
       Y_r_dot = 0,                         // Added masses param
       N_r_dot = 1748950469,                // Added masses param
-      Iz = 5829430000,                     // Moment of inertia
-      lx0 = 61.1,                          // First thruster x-axis distance
-      lx1 = -61.1;                          // Second thruster x-axis distance
+      Iz = 5829430000;                     // Moment of inertia
+
+  constexpr static double u_max = 222224.5896;
 
   // Damping coefficients
   constexpr static double Xuu = -7057.485120, Yvv = -3890570.407734,

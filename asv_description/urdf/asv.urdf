@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<robot name="asv" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <link name="asv">
+    <visual>
+      <!-- <origin rpy="0 0 0" xyz="-0.5 0 0.15"/> -->
+      <!-- <origin rpy="0 0 0" xyz="0 0 0.15"/> -->
+      <origin rpy="1.5708 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://asv_description/urdf/ferry_shape.STL" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <gazebo reference="world">
+    <material>Gazebo/White</material>
+    <gravity>true</gravity>
+  </gazebo>
+
+</robot>

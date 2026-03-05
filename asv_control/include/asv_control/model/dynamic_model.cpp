@@ -15,19 +15,19 @@ DynamicModel::DynamicModel(const Eigen::Vector3d& pose) {
       0, m * xg - Y_r_dot, Iz - N_r_dot;  //
 }
 
-State DynamicModel::update(Azimuth input) {
-  return update_with_perturb(input, Eigen::Vector3d{0, 0, 0});
+State DynamicModel::update(Azimuth u) {
+  return update_with_perturb(u, Eigen::Vector3d{0, 0, 0});
 }
 
-State DynamicModel::update_with_perturb(Azimuth input,
+State DynamicModel::update_with_perturb(Azimuth u,
                                         const Eigen::Vector3d& nu_c) {
   Eigen::Matrix3d C_RB, C_A;
   Eigen::Vector3d nu_r = nu - nu_c;
-  auto [u, v, r] = std::make_tuple(nu_r.x(), nu_r.y(), nu_r.z());
-  double c0 = m * (xg * r + v);
-  double c1 = m * u;
-  double c2 = Y_v_dot * v + Y_r_dot * r;
-  double c3 = X_u_dot * u;
+  auto [surge, sway, yaw] = std::make_tuple(nu_r.x(), nu_r.y(), nu_r.z());
+  double c0 = m * (xg * yaw + sway);
+  double c1 = m * surge;
+  double c2 = Y_v_dot * sway + Y_r_dot * yaw;
+  double c3 = X_u_dot * surge;
 
   C_RB << 0, 0, -c0,  //
       0, 0, c1,       //
@@ -41,13 +41,13 @@ State DynamicModel::update_with_perturb(Azimuth input,
 
   // Relative velocity vector (nu_r = nu - ocean currents)
   auto nu_abs = nu_r.cwiseAbs();
-  auto [u_abs, v_abs, r_abs] =
+  auto [surge_abs, sway_abs, yaw_abs] =
       std::make_tuple(nu_abs.x(), nu_abs.y(), nu_abs.z());
-  double d0 = -Xuu * u_abs;
-  double d1 = -Yvv * v_abs - Yrv * r_abs;
-  double d2 = -Yvr * v_abs - Yrr * r_abs;
-  double d3 = -Nvv * v_abs - Nrv * r_abs;
-  double d4 = -Nvr * v_abs - Nrr * r_abs;
+  double d0 = -Xuu * surge_abs;
+  double d1 = -Yvv * sway_abs - Yrv * yaw_abs;
+  double d2 = -Yvr * sway_abs - Yrr * yaw_abs;
+  double d3 = -Nvv * sway_abs - Nrv * yaw_abs;
+  double d4 = -Nvr * sway_abs - Nrr * yaw_abs;
   D << d0, 0, 0,  //
       0, d1, d2,  //
       0, d3, d4;  //
@@ -55,10 +55,10 @@ State DynamicModel::update_with_perturb(Azimuth input,
   Eigen::Vector3d F;
   Eigen::Matrix<double, 3, 2> T;
   Eigen::Vector2d control;
-  T << cos(input.ang0), cos(input.ang1),             //
-      sin(input.ang0), sin(input.ang1),              //
-      lx0 * sin(input.ang0), lx1 * sin(input.ang1);  //
-  control << input.force0, input.force1;
+  T << cos(u.ang0), cos(u.ang1),             //
+      sin(u.ang0), sin(u.ang1),              //
+      lx0 * sin(u.ang0), lx1 * sin(u.ang1);  //
+  control << u.force0, u.force1;
   F = T*control;
 
   nu_dot = M.inverse() * (F - C * nu_r - D * nu_r);
