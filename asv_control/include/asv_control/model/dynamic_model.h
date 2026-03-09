@@ -7,10 +7,16 @@
 struct State {
   double x, y, psi;
   double u, v, r;
+  double u_dot, v_dot, r_dot;
 };
 
 struct Azimuth {
   double force0, force1, ang0, ang1;
+};
+
+struct DecomposedDyn {
+  Eigen::Vector3d f;
+  Eigen::Matrix3d g;
 };
 
 class DynamicModel {
@@ -21,6 +27,8 @@ class DynamicModel {
   State update(Azimuth u);
   State update_with_perturb(Azimuth u, const Eigen::Vector3d& nu_c);
   static double wrap_angle(double angle);
+  DecomposedDyn get_decomposed_dyn(const Eigen::Vector3d &nu_);  
+  
   constexpr static double lx0 = 61.1,  // First thruster x-axis distance
       lx1 = -61.1;                     // Second thruster x-axis distance
 
@@ -53,7 +61,7 @@ class DynamicModel {
   Eigen::Vector3d nu = Eigen::Vector3d::Zero();
   Eigen::Vector3d nu_dot = Eigen::Vector3d::Zero();
   Eigen::Vector3d nu_dot_last = Eigen::Vector3d::Zero();
-  Eigen::Matrix3d M, C, D;
+  Eigen::Matrix3d M, M_inv, C, D;
 };
 
 #endif  // DYNAMIC_MODEL_H
