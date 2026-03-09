@@ -45,6 +45,10 @@ public:
 
     thrust_sub_ = this->create_subscription<asv_interfaces::msg::Thrust>(
         "asv/thrust", 10, [this](const asv_interfaces::msg::Thrust &msg) {
+          if (std::isnan(msg.force0) || std::isnan(msg.force1) ||
+              std::isnan(msg.ang0) || std::isnan(msg.ang1)) {
+            return;
+          }
           thrust_ = Azimuth{msg.force0, msg.force1, msg.ang0, msg.ang1};
           last_thrust_msg = this->get_clock()->now();
         });

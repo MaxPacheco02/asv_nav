@@ -16,7 +16,7 @@ struct Azimuth {
 
 struct DecomposedDyn {
   Eigen::Vector3d f;
-  Eigen::Matrix3d g;
+  Eigen::Matrix3d g, g_inv;
 };
 
 class DynamicModel {
@@ -27,12 +27,13 @@ class DynamicModel {
   State update(Azimuth u);
   State update_with_perturb(Azimuth u, const Eigen::Vector3d& nu_c);
   static double wrap_angle(double angle);
-  DecomposedDyn get_decomposed_dyn(const Eigen::Vector3d &nu_);  
-  
-  constexpr static double lx0 = 61.1,  // First thruster x-axis distance
-      lx1 = -61.1;                     // Second thruster x-axis distance
+  DecomposedDyn get_decomposed_dyn(const Eigen::Vector3d &nu_);
 
- private:
+  constexpr static double lx0 = 61.1,
+                          lx1 = -61.1,           // Thrusters x-axis arm-lengths
+      u_max = 222224.5896, u_min = -222224.5896; // Max control signals
+
+private:
   // Model parameters
   constexpr static double m = 4725629.25,  // [Kg]
       Lpp = 137.2,                         // Length between perpendiculars [m]
@@ -42,8 +43,6 @@ class DynamicModel {
       Y_r_dot = 0,                         // Added masses param
       N_r_dot = 1748950469,                // Added masses param
       Iz = 5829430000;                     // Moment of inertia
-
-  constexpr static double u_max = 222224.5896;
 
   // Damping coefficients
   constexpr static double Xuu = -7057.485120, Yvv = -3890570.407734,

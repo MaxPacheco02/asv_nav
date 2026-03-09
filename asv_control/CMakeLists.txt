@@ -36,6 +36,14 @@ set(DEPENDENCIES
   asv_interfaces
 )
 
+add_executable(aitsmc_node 
+  src/aitsmc_node.cpp
+  include/asv_control/model/dynamic_model.cpp
+  include/asv_control/control/AITSMC.cpp
+)
+target_include_directories(aitsmc_node PRIVATE include)
+ament_target_dependencies(aitsmc_node ${DEPENDENCIES})
+
 add_executable(dynamic_model_node 
   src/dynamic_model_node.cpp
   include/asv_control/model/dynamic_model.cpp
@@ -44,8 +52,14 @@ target_include_directories(dynamic_model_node PRIVATE include)
 ament_target_dependencies(dynamic_model_node ${DEPENDENCIES})
 
 install(TARGETS
+  aitsmc_node
   dynamic_model_node
   DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY
+  launch
+  scripts
+  DESTINATION share/${PROJECT_NAME})
 
 # Install Python executables
 install(PROGRAMS

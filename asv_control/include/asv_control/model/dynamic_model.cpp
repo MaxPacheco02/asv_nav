@@ -108,7 +108,8 @@ DecomposedDyn DynamicModel::get_decomposed_dyn(const Eigen::Vector3d &nu_){
       0, d1, d2,  //
       0, d3, d4;  //
   
-  out.g = M_inv;
   out.f = -M_inv * (C*nu_ + D*nu_);
+  out.g = M_inv;
+  out.g_inv = M;
   return out;
 }

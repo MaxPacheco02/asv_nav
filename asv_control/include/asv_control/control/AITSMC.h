@@ -1,5 +1,6 @@
 #pragma once
 #include "../model/dynamic_model.h"
+#include <iostream>
 
 struct AITSMCParams {
   double beta_psi, epsilon_u, epsilon_psi, k_alpha_u, k_alpha_psi, k_beta_u,
@@ -16,12 +17,11 @@ struct AITSMCDebugData {
 
 class AITSMC {
 public:
-  explicit AITSMC(const AITSMCParams &params);
+  AITSMC();
+  AITSMC(const AITSMCParams &params);
 
   Azimuth update(const State &s,
                           const State &setpoint);
-
-  static AITSMCParams defaultParams();
 
   double normalize_angle(double angle_in);
   double angle_dist(double ang1, double ang2);
