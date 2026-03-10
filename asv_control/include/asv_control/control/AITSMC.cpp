@@ -59,6 +59,8 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
     alpha(1) = 0;
     alpha(2) = std::max(
         std::pow(std::abs(err(2)), qp_psi) / (p.tc_psi * qp_psi), 1e-6);
+    // TODO: Figure out way to initialize alpha:
+    alpha << 1e-6, 1e-6, 1e-6;
     e_i = -err.cwiseQuotient(alpha);
     e_i(1) = 0; // else, it's nan because sway err is always 0
     initialized = true;
@@ -132,5 +134,19 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
             << alpha.format(fmt) << "\n"
             << std::endl;
 
+  for (int i = 0; i < 3; i++) {
+    debugData[i].e = err(i);
+    debugData[i].e_i = e_i(i);
+    debugData[i].e_i_dot = e_i_dot(i);
+    debugData[i].s = s(i);
+    debugData[i].K = K(i);
+  }
   return out;
+}
+
+void AITSMC::reset_integral(int idx) {
+    e_i(idx) = 0.0;
+    e_i_dot_last(idx) = 0.0;
+    K(idx) = 0.0;
+    K_dot_last(idx) = 0.0;
 }

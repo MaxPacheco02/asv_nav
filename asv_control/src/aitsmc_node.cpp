@@ -1,3 +1,4 @@
+#include <asv_interfaces/msg/detail/aitsmc_debug__struct.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -11,6 +12,7 @@
 
 #include "asv_interfaces/msg/ref.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
+#include "asv_interfaces/msg/aitsmc_debug.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -44,6 +46,11 @@ public:
 
     reference_sub_ = this->create_subscription<asv_interfaces::msg::Ref>(
         "asv/state/ref", 10, [this](const asv_interfaces::msg::Ref &msg) {
+          // if (std::abs(msg.u - asv_d.u) > surge_threshold)
+          //   control.reset_integral(0);
+          // if (std::abs(msg.psi - asv_d.psi) > head_threshold)
+          //   control.reset_integral(2);
+
           // Some references are equal to the state because they are not used.
           asv_d.x = asv.x;
           asv_d.y = asv.y;
@@ -63,6 +70,10 @@ public:
 
     thrust_pub_ =
         this->create_publisher<asv_interfaces::msg::Thrust>("asv/thrust", 10);
+    surge_debug_pub_ =
+        this->create_publisher<asv_interfaces::msg::AitsmcDebug>("aitsmc/debug/u", 10);
+    heading_debug_pub_ =
+        this->create_publisher<asv_interfaces::msg::AitsmcDebug>("aitsmc/debug/psi", 10);
 
     update_timer_ =
         this->create_wall_timer(10ms, std::bind(&AitsmcNode::update, this));
@@ -81,16 +92,25 @@ protected:
       return;
     }
 
-    asv_interfaces::msg::Thrust msg;
-    msg.force0 = thrust.force0;
-    msg.force1 = thrust.force1;
-    msg.ang0 = thrust.ang0;
-    msg.ang1 = thrust.ang1;
-    thrust_pub_->publish(msg);
+    asv_interfaces::msg::Thrust thrust_msg;
+    thrust_msg.force0 = thrust.force0;
+    thrust_msg.force1 = thrust.force1;
+    thrust_msg.ang0 = thrust.ang0;
+    thrust_msg.ang1 = thrust.ang1;
+    thrust_pub_->publish(thrust_msg);
+
+    asv_interfaces::msg::AitsmcDebug surge_debug_msg;
+    surge_debug_msg = debug_to_ros(control.getDebugData(0));
+    surge_debug_pub_->publish(surge_debug_msg);
+
+    asv_interfaces::msg::AitsmcDebug heading_debug_msg;
+    heading_debug_msg = debug_to_ros(control.getDebugData(1));
+    heading_debug_pub_->publish(heading_debug_msg);
   }
 
 private:
   rclcpp::Publisher<asv_interfaces::msg::Thrust>::SharedPtr thrust_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::AitsmcDebug>::SharedPtr surge_debug_pub_, heading_debug_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr reference_sub_;
@@ -101,6 +121,9 @@ private:
   AITSMCParams p;
   State asv{0,0,0,0,0,0,0,0,0};   // ASV state
   State asv_d{0,0,0,0,0,0,0,0,0}; // ASV's desired state
+
+  double surge_threshold{0.5};
+  double head_threshold{0.1};
 
   bool odom_received{false},
        ref_received{false};
@@ -127,6 +150,16 @@ private:
     p.p_psi = get_param("p_psi");
     p.beta_psi = get_param("beta_psi");
     return p;
+  }
+
+  asv_interfaces::msg::AitsmcDebug debug_to_ros(const AITSMCDebugData &data) {
+    asv_interfaces::msg::AitsmcDebug out;
+    out.e = data.e;
+    out.e_i = data.e_i;
+    out.e_i_dot = data.e_i_dot;
+    out.s = data.s;
+    out.k = data.K;
+    return out;
   }
 };
 

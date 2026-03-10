@@ -1,6 +1,7 @@
 #pragma once
 #include "../model/dynamic_model.h"
 #include <iostream>
+#include <array>
 
 struct AITSMCParams {
   double beta_psi, epsilon_u, epsilon_psi, k_alpha_u, k_alpha_psi, k_beta_u,
@@ -8,11 +9,7 @@ struct AITSMCParams {
 };
 
 struct AITSMCDebugData {
-  double e_u{0}, e_psi{0};
-  double edot_psi{0}, ei_psi{0};
-  double s_u{0}, s_psi{0};
-  double Ka_u{0}, Ka_psi{0};
-  double Tx{0}, Tz{0};
+  double e, e_i, e_i_dot, s, K;
 };
 
 class AITSMC {
@@ -25,8 +22,9 @@ public:
 
   double normalize_angle(double angle_in);
   double angle_dist(double ang1, double ang2);
+  void reset_integral(int idx);
 
-  [[nodiscard]] AITSMCDebugData getDebugData() const { return debugData; }
+  [[nodiscard]] AITSMCDebugData getDebugData(int idx) const { return debugData[idx]; }
 
 private:
   AITSMCParams p;
@@ -48,7 +46,7 @@ private:
 
   double Ka_dot_last_u{0}, Ka_dot_last_psi{0};
 
-  AITSMCDebugData debugData;
+  std::array<AITSMCDebugData,3> debugData;
 
   DynamicModel model;
   double g_u{0}, g_psi{0};

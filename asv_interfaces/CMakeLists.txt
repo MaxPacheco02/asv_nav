@@ -14,6 +14,7 @@ find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/AitsmcDebug.msg"
   "msg/Ref.msg"
   "msg/Thrust.msg"
   DEPENDENCIES std_msgs 
