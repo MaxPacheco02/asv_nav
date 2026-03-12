@@ -9,7 +9,7 @@ struct AITSMCParams {
 };
 
 struct AITSMCDebugData {
-  double e, e_i, e_i_dot, s, K;
+  double e, e_i, e_i_dot, s, K, U;
 };
 
 class AITSMC {

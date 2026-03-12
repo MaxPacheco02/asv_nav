@@ -51,9 +51,15 @@ add_executable(dynamic_model_node
 target_include_directories(dynamic_model_node PRIVATE include)
 ament_target_dependencies(dynamic_model_node ${DEPENDENCIES})
 
+add_executable(refs_publisher_node 
+  src/refs_publisher_node.cpp
+)
+ament_target_dependencies(refs_publisher_node ${DEPENDENCIES})
+
 install(TARGETS
   aitsmc_node
   dynamic_model_node
+  refs_publisher_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY

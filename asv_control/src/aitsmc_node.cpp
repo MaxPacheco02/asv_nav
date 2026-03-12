@@ -104,7 +104,7 @@ protected:
     surge_debug_pub_->publish(surge_debug_msg);
 
     asv_interfaces::msg::AitsmcDebug heading_debug_msg;
-    heading_debug_msg = debug_to_ros(control.getDebugData(1));
+    heading_debug_msg = debug_to_ros(control.getDebugData(2));
     heading_debug_pub_->publish(heading_debug_msg);
   }
 
@@ -159,6 +159,7 @@ private:
     out.e_i_dot = data.e_i_dot;
     out.s = data.s;
     out.k = data.K;
+    out.u = data.U;
     return out;
   }
 };

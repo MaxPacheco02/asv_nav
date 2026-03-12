@@ -56,13 +56,10 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
     double qp_psi = 1.0 - p.q_psi / p.p_psi;
     alpha(0) =
         std::max(std::pow(std::abs(err(0)), qp_u) / (p.tc_u * qp_u), 1e-6);
-    alpha(1) = 0;
+    alpha(1) = 1e-6;
     alpha(2) = std::max(
         std::pow(std::abs(err(2)), qp_psi) / (p.tc_psi * qp_psi), 1e-6);
-    // TODO: Figure out way to initialize alpha:
-    alpha << 1e-6, 1e-6, 1e-6;
     e_i = -err.cwiseQuotient(alpha);
-    e_i(1) = 0; // else, it's nan because sway err is always 0
     initialized = true;
   }
 
@@ -71,7 +68,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   e_i = integral_step * (e_i_dot + e_i_dot_last) / 2 + e_i;
   e_i_dot_last = e_i_dot;
   Eigen::Vector3d s =
-      nu_d - nu + beta.cwiseProduct(eta_d - eta) + alpha.cwiseProduct(e_i);
+      nu_d - nu + beta.cwiseProduct(err) + alpha.cwiseProduct(e_i);
 
   // ADAPTIVE GAIN
   // K_dot = sqrt(K_a)*sqrt(|s|) - sqrt(K_b)*K^2
@@ -109,7 +106,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
     Tz *= scale;
   }
 
-  double angle = atan2(Tz, Tx * model.lx0);
+  double angle = atan2(Tz / model.lx0, Tx / 2);
 
   out.ang0 = angle;
   out.ang1 = -angle;
@@ -140,6 +137,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
     debugData[i].e_i_dot = e_i_dot(i);
     debugData[i].s = s(i);
     debugData[i].K = K(i);
+    debugData[i].U = U(i);
   }
   return out;
 }
