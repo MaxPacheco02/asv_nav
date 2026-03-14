@@ -11,9 +11,9 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "asv_interfaces/msg/ref.hpp"
+#include "asv_interfaces/msg/state.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
 #include "asv_interfaces/msg/aitsmc_debug.hpp"
-#include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
@@ -31,16 +31,18 @@ public:
     p = initialize_params();
     control = AITSMC(p);
 
-    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "asv/state/odom", 10, [this](const nav_msgs::msg::Odometry &msg) {
-          asv.x = msg.pose.pose.position.x;
-          asv.y = msg.pose.pose.position.y;
-          auto &q = msg.pose.pose.orientation;
-          asv.psi = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
-                               1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-          asv.u = msg.twist.twist.linear.x;
-          asv.v = msg.twist.twist.linear.y;
-          asv.r = msg.twist.twist.angular.z;
+    state_sub_ = this->create_subscription<asv_interfaces::msg::State>(
+        "asv/state", 10, [this](const asv_interfaces::msg::State &msg) {
+          asv.x = msg.x; 
+          asv.y = msg.y; 
+          asv.psi = msg.psi; 
+          asv.u = msg.u; 
+          asv.v = msg.v; 
+          asv.r = msg.r ;
+          asv.u_dot = msg.u_dot;
+          asv.v_dot = msg.v_dot;
+          asv.r_dot = msg.r_dot;
+
           odom_received = true;
         });
 
@@ -60,7 +62,7 @@ public:
           asv_d.v = 0;
           asv_d.r = 0;
 
-          // TODO: Compute feedforward (from mpc sol. or spline)
+          // TODO: Consider computing feedforward (from mpc sol. or spline)
           asv_d.u_dot = 0;
           asv_d.v_dot = 0;
           asv_d.r_dot = 0;
@@ -112,7 +114,7 @@ private:
   rclcpp::Publisher<asv_interfaces::msg::Thrust>::SharedPtr thrust_pub_;
   rclcpp::Publisher<asv_interfaces::msg::AitsmcDebug>::SharedPtr surge_debug_pub_, heading_debug_pub_;
 
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr reference_sub_;
 
   rclcpp::TimerBase::SharedPtr update_timer_;

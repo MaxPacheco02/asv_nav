@@ -10,6 +10,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "asv_interfaces/msg/thrust.hpp"
+#include "asv_interfaces/msg/state.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -55,6 +56,8 @@ public:
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose2D>(
         "asv/state/pose", 10);
+    asv_state_pub_ = this->create_publisher<asv_interfaces::msg::State>(
+        "asv/state", 10);
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Vector3>(
         "asv/state/velocity", 10);
     odom_pub_ =
@@ -85,6 +88,11 @@ protected:
     }
 
     State out = model.update(thrust_);
+    
+    asv_interfaces::msg::State asv_state_msg;
+    asv_state_msg = asv_interfaces::build<asv_interfaces::msg::State>()
+      .x(out.x).y(out.y).psi(out.psi).u(out.u).v(out.v).r(out.r)
+      .u_dot(out.u_dot).v_dot(out.v_dot).r_dot(out.r_dot);
 
     geometry_msgs::msg::Pose2D pose;
     pose.x = out.x;
@@ -118,8 +126,10 @@ protected:
       azimuth_conf_msg.poses.push_back(
           v2p(rotate(forward(eta, model.lx1), thrust_.ang1)));
 
+
     pose_pub_->publish(pose);
     odom_pub_->publish(odom);
+    asv_state_pub_->publish(asv_state_msg);
     local_vel_pub_->publish(velMsg);
     pose_path_pub_->publish(pose_path);
     azimuth_conf_pub_->publish(azimuth_conf_msg);
@@ -129,6 +139,7 @@ protected:
 private:
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr azimuth_conf_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Pose2D>::SharedPtr pose_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr asv_state_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr local_vel_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pose_path_pub_;

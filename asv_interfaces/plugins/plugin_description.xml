@@ -1,0 +1,33 @@
+<library path="asv_rviz_tools">
+  <class name="asv_interfaces/GoalTool"
+         type="asv_interfaces::rviz_tools::GoalTool"
+         base_class_type="rviz_common::Tool">
+    <description>
+      Sets a goal pose from ASV
+    </description>
+  </class>
+  
+  <class name="asv_interfaces/GoalFromTool"
+         type="asv_interfaces::rviz_tools::GoalFromTool"
+         base_class_type="rviz_common::Tool">
+    <description>
+      Sets a goal pose for From location
+    </description>
+  </class>
+  
+  <class name="asv_interfaces/GoalToTool"
+         type="asv_interfaces::rviz_tools::GoalToTool"
+         base_class_type="rviz_common::Tool">
+    <description>
+      Sets a goal pose for To location
+    </description>
+  </class>
+
+  <class name="asv_interfaces/CenterOnRobotTool"
+         type="asv_interfaces::rviz_tools::CenterOnRobotTool"
+         base_class_type="rviz_common::Tool">
+    <description>
+      Press x to center camera on robot
+    </description>
+  </class>
+</library>
