@@ -1,8 +1,8 @@
 #include "AITSMC.h"
 #include "asv_control/model/dynamic_model.h"
 #include <Eigen/src/Core/Matrix.h>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 
 AITSMC::AITSMC() {
@@ -20,18 +20,18 @@ AITSMC::AITSMC(const AITSMCParams &params) {
   K_dot_last = Eigen::Vector3d::Zero();
 
   // model = DynamicModel(Eigen::Vector3d{0, 0, 0});
-  beta << 0, 0, p.beta_psi;
+  beta << 0, 0, p.psi.beta;
 }
 
-double AITSMC::normalize_angle(double angle_in){
+double AITSMC::normalize_angle(double angle_in) {
   double angle_out = std::fmod(angle_in + M_PI, 2 * M_PI);
-  if(angle_out < 0){
-    angle_out += 2*M_PI;
+  if (angle_out < 0) {
+    angle_out += 2 * M_PI;
   }
   return angle_out - M_PI;
 }
 
-double AITSMC::angle_dist(double ang1, double ang2){
+double AITSMC::angle_dist(double ang1, double ang2) {
   double diff = ang1 - ang2;
   return normalize_angle(diff);
 }
@@ -45,20 +45,17 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
 
   // INTEGRAL ERROR
   // e_i_dot = sign(err_n)*|err_n|^(q_n/p_n)
-  Eigen::Vector3d err(nu_d(0)-nu(0), 0, angle_dist(eta_d(2),eta(2)));
-  Eigen::Vector3d qp(p.q_u/p.p_u, 0, p.q_psi/p.p_psi);
+  Eigen::Vector3d err(nu_d(0) - nu(0), nu_d(1) - nu(1),
+                      angle_dist(eta_d(2), eta(2)));
+  Eigen::Vector3d qp(p.u.q / p.u.p, p.v.q / p.v.p, p.psi.q / p.psi.p);
+  Eigen::Array3d qp1 = (Eigen::Vector3d::Ones() - qp).array();
+  Eigen::Array3d tc(p.u.tc, p.v.tc, p.psi.tc);
   Eigen::Vector3d e_qp = err.cwiseAbs().array().pow(qp.array());
   Eigen::Vector3d e_i_dot = err.cwiseSign().cwiseProduct(e_qp);
 
   // INITIALIZE ALPHA
   if (!initialized) {
-    double qp_u = 1.0 - p.q_u / p.p_u;
-    double qp_psi = 1.0 - p.q_psi / p.p_psi;
-    alpha(0) =
-        std::max(std::pow(std::abs(err(0)), qp_u) / (p.tc_u * qp_u), 1e-6);
-    alpha(1) = 1e-6;
-    alpha(2) = std::max(
-        std::pow(std::abs(err(2)), qp_psi) / (p.tc_psi * qp_psi), 1e-6);
+    alpha = (err.array().abs().pow(qp1) / (tc * qp1)).max(1e-6);
     e_i = -err.cwiseQuotient(alpha);
     initialized = true;
   }
@@ -72,8 +69,8 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
 
   // ADAPTIVE GAIN
   // K_dot = sqrt(K_a)*sqrt(|s|) - sqrt(K_b)*K^2
-  Eigen::Vector3d K_a(p.k_alpha_u, 0, p.k_alpha_psi);
-  Eigen::Vector3d K_b(p.k_beta_u, 0, p.k_beta_psi);
+  Eigen::Vector3d K_a(p.u.k_alpha, p.v.k_alpha, p.psi.k_alpha);
+  Eigen::Vector3d K_b(p.u.k_beta, p.v.k_beta, p.psi.k_beta);
   Eigen::Vector3d s_abs_sqrt = s.cwiseAbs().cwiseSqrt();
   Eigen::Vector3d K_dot = K_a.cwiseSqrt().cwiseProduct(s_abs_sqrt) -
                           K_b.cwiseProduct(K.cwiseProduct(K));
@@ -81,7 +78,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   K_dot_last = K_dot;
 
   // AUXLIARY CONTROL
-  Eigen::Vector3d eps(p.epsilon_u, 0, p.epsilon_psi);
+  Eigen::Vector3d eps(p.u.epsilon, p.v.epsilon, p.psi.epsilon);
   Eigen::Vector3d sign_s = s.cwiseSign();
   Eigen::Vector3d U_aux = -K.cwiseProduct(s_abs_sqrt).cwiseProduct(sign_s) -
                           eps.cwiseProduct(K).cwiseProduct(s.cwiseAbs());
@@ -90,33 +87,37 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   DecomposedDyn dyn = model.get_decomposed_dyn(nu);
 
   // CONTROL SIGNAL
-  Eigen::Vector3d U = dyn.g_inv * (nu_dot_d - dyn.f + beta.cwiseProduct(nu_d - nu) +
-                       alpha.cwiseProduct(e_i_dot) - U_aux);
+  Eigen::Vector3d U =
+      dyn.g_inv * (nu_dot_d - dyn.f + beta.cwiseProduct(nu_d - nu) +
+                   alpha.cwiseProduct(e_i_dot) - U_aux);
 
   // ALLOCATE FORCES
   Azimuth out;
   double Tx = U(0);
+  double Ty = U(1);
   double Tz = U(2);
 
-  double force = std::hypot(Tx / 2, Tz / model.lx0);
+  double thrust_dir = atan2(Ty, Tx); // average angle
+  double Txy = std::hypot(Tx, Ty);
+  double delta = atan2(Tz, model.lx0 * Txy); // split angle for yaw
+  double force = Txy / (2.0 * cos(delta));
+
+  // Clamp force
   if (force > model.u_max) {
-    // Scale down Tx and Tz proportionally to stay within limit
     double scale = model.u_max / force;
-    Tx *= scale;
-    Tz *= scale;
+    force = model.u_max;
+    // Tx, Ty, Tz all scale proportionally
   }
 
-  double angle = atan2(Tz / model.lx0, Tx / 2);
-
-  out.ang0 = angle;
-  out.ang1 = -angle;
-  out.force0 = std::hypot(Tx / 2, Tz / model.lx0);
-  out.force1 = std::hypot(Tx / 2, Tz / model.lx0);
+  out.ang0 = thrust_dir + delta;
+  out.ang1 = thrust_dir - delta;
+  out.force0 = force;
+  out.force1 = force;
 
   // Printing for debug
   Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
   std::cout << "Thrust:\n"
-            << Eigen::Vector3d{Tx,0,Tz}.format(fmt) << "\n"
+            << Eigen::Vector3d{Tx, 0, Tz}.format(fmt) << "\n"
             << "s:\n"
             << s.format(fmt) << "\n"
             << "U_aux:\n"
@@ -143,8 +144,8 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
 }
 
 void AITSMC::reset_integral(int idx) {
-    e_i(idx) = 0.0;
-    e_i_dot_last(idx) = 0.0;
-    K(idx) = 0.0;
-    K_dot_last(idx) = 0.0;
+  e_i(idx) = 0.0;
+  e_i_dot_last(idx) = 0.0;
+  K(idx) = 0.0;
+  K_dot_last(idx) = 0.0;
 }

@@ -1,11 +1,15 @@
 #pragma once
 #include "../model/dynamic_model.h"
-#include <iostream>
 #include <array>
+#include <iostream>
+
+struct AITSMCStateParams {
+  double beta, epsilon, k_alpha, k_beta, //
+      tc, q, p;
+};
 
 struct AITSMCParams {
-  double beta_psi, epsilon_u, epsilon_psi, k_alpha_u, k_alpha_psi, k_beta_u,
-      k_beta_psi, tc_u, tc_psi, q_u, q_psi, p_u, p_psi;
+  AITSMCStateParams u, v, psi;
 };
 
 struct AITSMCDebugData {
@@ -17,14 +21,15 @@ public:
   AITSMC();
   AITSMC(const AITSMCParams &params);
 
-  Azimuth update(const State &s,
-                          const State &setpoint);
+  Azimuth update(const State &s, const State &setpoint);
 
   double normalize_angle(double angle_in);
   double angle_dist(double ang1, double ang2);
   void reset_integral(int idx);
 
-  [[nodiscard]] AITSMCDebugData getDebugData(int idx) const { return debugData[idx]; }
+  [[nodiscard]] AITSMCDebugData getDebugData(int idx) const {
+    return debugData[idx];
+  }
 
 private:
   AITSMCParams p;
@@ -46,7 +51,7 @@ private:
 
   double Ka_dot_last_u{0}, Ka_dot_last_psi{0};
 
-  std::array<AITSMCDebugData,3> debugData;
+  std::array<AITSMCDebugData, 3> debugData;
 
   DynamicModel model;
   double g_u{0}, g_psi{0};

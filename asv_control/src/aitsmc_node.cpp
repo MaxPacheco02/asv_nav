@@ -1,4 +1,5 @@
 #include <asv_interfaces/msg/detail/aitsmc_debug__struct.hpp>
+#include <geometry_msgs/msg/detail/vector3__struct.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -10,10 +11,11 @@
 #include <random>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include "asv_interfaces/msg/aitsmc_debug.hpp"
 #include "asv_interfaces/msg/ref.hpp"
 #include "asv_interfaces/msg/state.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
-#include "asv_interfaces/msg/aitsmc_debug.hpp"
+#include "geometry_msgs/msg/vector3.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
@@ -33,12 +35,12 @@ public:
 
     state_sub_ = this->create_subscription<asv_interfaces::msg::State>(
         "asv/state", 10, [this](const asv_interfaces::msg::State &msg) {
-          asv.x = msg.x; 
-          asv.y = msg.y; 
-          asv.psi = msg.psi; 
-          asv.u = msg.u; 
-          asv.v = msg.v; 
-          asv.r = msg.r ;
+          asv.x = msg.x;
+          asv.y = msg.y;
+          asv.psi = msg.psi;
+          asv.u = msg.u;
+          asv.v = msg.v;
+          asv.r = msg.r;
           asv.u_dot = msg.u_dot;
           asv.v_dot = msg.v_dot;
           asv.r_dot = msg.r_dot;
@@ -53,14 +55,9 @@ public:
           // if (std::abs(msg.psi - asv_d.psi) > head_threshold)
           //   control.reset_integral(2);
 
-          // Some references are equal to the state because they are not used.
-          asv_d.x = asv.x;
-          asv_d.y = asv.y;
           asv_d.psi = msg.psi;
-
           asv_d.u = msg.u;
-          asv_d.v = 0;
-          asv_d.r = 0;
+          asv_d.v = msg.v;
 
           // TODO: Consider computing feedforward (from mpc sol. or spline)
           asv_d.u_dot = 0;
@@ -70,12 +67,18 @@ public:
           ref_received = true;
         });
 
+    tmp_thrust_pub_ =
+        this->create_publisher<geometry_msgs::msg::Vector3>("asv/forces", 10);
     thrust_pub_ =
         this->create_publisher<asv_interfaces::msg::Thrust>("asv/thrust", 10);
-    surge_debug_pub_ =
-        this->create_publisher<asv_interfaces::msg::AitsmcDebug>("aitsmc/debug/u", 10);
+
+    surge_debug_pub_ = this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
+        "aitsmc/debug/u", 10);
+    sway_debug_pub_ = this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
+        "aitsmc/debug/v", 10);
     heading_debug_pub_ =
-        this->create_publisher<asv_interfaces::msg::AitsmcDebug>("aitsmc/debug/psi", 10);
+        this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
+            "aitsmc/debug/psi", 10);
 
     update_timer_ =
         this->create_wall_timer(10ms, std::bind(&AitsmcNode::update, this));
@@ -83,7 +86,7 @@ public:
 
 protected:
   void update() {
-    if(!odom_received || !ref_received)
+    if (!odom_received || !ref_received)
       return;
 
     Azimuth thrust = control.update(asv, asv_d);
@@ -105,6 +108,10 @@ protected:
     surge_debug_msg = debug_to_ros(control.getDebugData(0));
     surge_debug_pub_->publish(surge_debug_msg);
 
+    asv_interfaces::msg::AitsmcDebug sway_debug_msg;
+    sway_debug_msg = debug_to_ros(control.getDebugData(1));
+    sway_debug_pub_->publish(sway_debug_msg);
+
     asv_interfaces::msg::AitsmcDebug heading_debug_msg;
     heading_debug_msg = debug_to_ros(control.getDebugData(2));
     heading_debug_pub_->publish(heading_debug_msg);
@@ -112,7 +119,10 @@ protected:
 
 private:
   rclcpp::Publisher<asv_interfaces::msg::Thrust>::SharedPtr thrust_pub_;
-  rclcpp::Publisher<asv_interfaces::msg::AitsmcDebug>::SharedPtr surge_debug_pub_, heading_debug_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr tmp_thrust_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::AitsmcDebug>::SharedPtr
+      surge_debug_pub_,
+      sway_debug_pub_, heading_debug_pub_;
 
   rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr reference_sub_;
@@ -121,14 +131,13 @@ private:
 
   AITSMC control;
   AITSMCParams p;
-  State asv{0,0,0,0,0,0,0,0,0};   // ASV state
-  State asv_d{0,0,0,0,0,0,0,0,0}; // ASV's desired state
+  State asv{0, 0, 0, 0, 0, 0, 0, 0, 0};   // ASV state
+  State asv_d{0, 0, 0, 0, 0, 0, 0, 0, 0}; // ASV's desired state
 
   double surge_threshold{0.5};
   double head_threshold{0.1};
 
-  bool odom_received{false},
-       ref_received{false};
+  bool odom_received{false}, ref_received{false};
 
   AITSMCParams initialize_params() {
     // Declare and get in one shot
@@ -138,19 +147,25 @@ private:
     };
 
     AITSMCParams p;
-    p.epsilon_u = get_param("epsilon_u");
-    p.epsilon_psi = get_param("epsilon_psi");
-    p.k_alpha_u = get_param("k_alpha_u");
-    p.k_alpha_psi = get_param("k_alpha_psi");
-    p.k_beta_u = get_param("k_beta_u");
-    p.k_beta_psi = get_param("k_beta_psi");
-    p.tc_u = get_param("tc_u");
-    p.tc_psi = get_param("tc_psi");
-    p.q_u = get_param("q_u");
-    p.q_psi = get_param("q_psi");
-    p.p_u = get_param("p_u");
-    p.p_psi = get_param("p_psi");
-    p.beta_psi = get_param("beta_psi");
+    p.u = AITSMCStateParams{0.0,
+                            get_param("epsilon_u"),
+                            get_param("k_alpha_u"),
+                            get_param("k_beta_u"),
+                            get_param("tc_u"),
+                            get_param("q_u"),
+                            get_param("p_u")};
+    p.v = AITSMCStateParams{0.0,
+                            get_param("epsilon_v"),
+                            get_param("k_alpha_v"),
+                            get_param("k_beta_v"),
+                            get_param("tc_v"),
+                            get_param("q_v"),
+                            get_param("p_v")};
+    p.psi =
+        AITSMCStateParams{get_param("beta_psi"),    get_param("epsilon_psi"),
+                          get_param("k_alpha_psi"), get_param("k_beta_psi"),
+                          get_param("tc_psi"),      get_param("q_psi"),
+                          get_param("p_psi")};
     return p;
   }
 

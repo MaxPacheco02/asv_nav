@@ -3,9 +3,9 @@ build/
 install/
 */.vscode/
 .vscode/
-src/asv_control/scripts/acados/*.json
-src/asv_control/scripts/acados/__pycache__
-src/asv_control/scripts/acados/c_generated_code_*
+asv_control/scripts/mpc/*.json
+asv_control/scripts/mpc/__pycache__
+asv_control/scripts/mpc/c_generated_code_*
 *.engine
 *.onnx
 *.deb

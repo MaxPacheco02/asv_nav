@@ -17,15 +17,6 @@ DynamicModel::DynamicModel(const Eigen::Vector3d &pose) {
 }
 
 State DynamicModel::update(Azimuth u) {
-  return update_with_perturb(u, Eigen::Vector3d{0, 0, 0});
-}
-
-State DynamicModel::update_with_perturb(Azimuth u,
-                                        const Eigen::Vector3d &nu_c) {
-  // Relative velocity vector (nu_r = nu - ocean currents)
-  Eigen::Vector3d nu_r = nu - nu_c;
-  DecomposedDyn dyn = get_decomposed_dyn(nu);
-
   Eigen::Vector3d F;
   Eigen::Matrix<double, 3, 2> T;
   Eigen::Vector2d control;
@@ -34,6 +25,18 @@ State DynamicModel::update_with_perturb(Azimuth u,
       lx0 * sin(u.ang0), lx1 * sin(u.ang1); //
   control << u.force0, u.force1;
   F = T * control;
+  return update_with_perturb(F, Eigen::Vector3d::Zero());
+}
+
+State DynamicModel::update(Eigen::Vector3d u) {
+  return update_with_perturb(u, Eigen::Vector3d{0, 0, 0});
+}
+
+State DynamicModel::update_with_perturb(Eigen::Vector3d F,
+                                        const Eigen::Vector3d &nu_c) {
+  // Relative velocity vector (nu_r = nu - ocean currents)
+  Eigen::Vector3d nu_r = nu - nu_c;
+  DecomposedDyn dyn = get_decomposed_dyn(nu);
 
   // nu_dot = M.inverse() * (F - C * nu - D * nu);
   nu_dot = dyn.f + dyn.g * F;

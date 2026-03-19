@@ -51,15 +51,45 @@ add_executable(dynamic_model_node
 target_include_directories(dynamic_model_node PRIVATE include)
 ament_target_dependencies(dynamic_model_node ${DEPENDENCIES})
 
-add_executable(refs_publisher_node 
-  src/refs_publisher_node.cpp
-)
+add_executable(refs_publisher_node src/refs_publisher_node.cpp)
 ament_target_dependencies(refs_publisher_node ${DEPENDENCIES})
+
+add_executable(spline_publisher_node src/spline_publisher_node.cpp)
+ament_target_dependencies(spline_publisher_node ${DEPENDENCIES})
+
+# ================
+# ||| MPC Node |||
+# ================
+
+# Find ACADOS
+set(ACADOS_INSTALL_DIR "$ENV{HOME}/acados")
+include_directories(
+  ${ACADOS_INSTALL_DIR}/include
+  ${ACADOS_INSTALL_DIR}/include/acados
+  ${ACADOS_INSTALL_DIR}/include/blasfeo/include
+  ${ACADOS_INSTALL_DIR}/include/hpipm/include
+)
+link_directories(${ACADOS_INSTALL_DIR}/lib)
+
+# Include generated code directory
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp)
+# Add all generated source files
+file(GLOB ACADOS_GENERATED_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/acados_*.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*/*.c
+)
+
+add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
+ament_target_dependencies(mpc_node ${DEPENDENCIES})
+target_link_libraries(mpc_node acados hpipm blasfeo m)
+
 
 install(TARGETS
   aitsmc_node
   dynamic_model_node
   refs_publisher_node
+  spline_publisher_node
+  mpc_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
@@ -70,6 +100,7 @@ install(DIRECTORY
 # Install Python executables
 install(PROGRAMS
   scripts/teleop_xbox_node.py
+  scripts/mpc/mpc_gui.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

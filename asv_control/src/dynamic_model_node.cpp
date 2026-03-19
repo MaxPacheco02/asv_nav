@@ -9,8 +9,8 @@
 #include <random>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "asv_interfaces/msg/thrust.hpp"
 #include "asv_interfaces/msg/state.hpp"
+#include "asv_interfaces/msg/thrust.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -56,8 +56,8 @@ public:
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose2D>(
         "asv/state/pose", 10);
-    asv_state_pub_ = this->create_publisher<asv_interfaces::msg::State>(
-        "asv/state", 10);
+    asv_state_pub_ =
+        this->create_publisher<asv_interfaces::msg::State>("asv/state", 10);
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Vector3>(
         "asv/state/velocity", 10);
     odom_pub_ =
@@ -88,11 +88,18 @@ protected:
     }
 
     State out = model.update(thrust_);
-    
+
     asv_interfaces::msg::State asv_state_msg;
     asv_state_msg = asv_interfaces::build<asv_interfaces::msg::State>()
-      .x(out.x).y(out.y).psi(out.psi).u(out.u).v(out.v).r(out.r)
-      .u_dot(out.u_dot).v_dot(out.v_dot).r_dot(out.r_dot);
+                        .x(out.x)
+                        .y(out.y)
+                        .psi(out.psi)
+                        .u(out.u)
+                        .v(out.v)
+                        .r(out.r)
+                        .u_dot(out.u_dot)
+                        .v_dot(out.v_dot)
+                        .r_dot(out.r_dot);
 
     geometry_msgs::msg::Pose2D pose;
     pose.x = out.x;
@@ -125,7 +132,6 @@ protected:
     if (thrust_.force1 > 1e-3)
       azimuth_conf_msg.poses.push_back(
           v2p(rotate(forward(eta, model.lx1), thrust_.ang1)));
-
 
     pose_pub_->publish(pose);
     odom_pub_->publish(odom);
