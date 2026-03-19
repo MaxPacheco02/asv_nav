@@ -1,5 +1,7 @@
 #include <asv_interfaces/msg/detail/ref__struct.hpp>
 #include <eigen3/Eigen/Dense>
+#include <geometry_msgs/msg/detail/pose_array__struct.hpp>
+#include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
 #include <limits>
 #include <math.h>
 #include <memory>
@@ -7,6 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
 // ACADOS includes
 #include "acados/utils/math.h"
@@ -22,6 +28,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "asv_interfaces/msg/ref.hpp"
+#include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
@@ -43,7 +50,7 @@
 #define N_AP 3         // Additional params
 #define N_OP n_obs * 2 // Obstacle params (velocities)
 
-#define TF 20.0             // MPC prediction horizon [s]
+#define TF 50.0             // MPC prediction horizon [s]
 #define DT (TF / N_HORIZON) // Time step
 
 struct WeightParams {
@@ -261,6 +268,12 @@ public:
     sol_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/sol_path", 10);
 
+    sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
+        "/mpc/sol_array", 10);
+
+    sol_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/mpc/sol_pose", 10);
+
     ref_pub_ =
         this->create_publisher<asv_interfaces::msg::Ref>("/asv/state/ref", 10);
 
@@ -281,7 +294,10 @@ public:
     timer_ = this->create_wall_timer(500ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = "world";
+    sol_array_msg.header.frame_id = "world";
+    sol_pose_msg.header.frame_id = "world";
     sol_path_msg.poses.resize(N_HORIZON + 1);
+    sol_array_msg.poses.resize(sol_array_length);
 
     // === CREATE OCP SOLVER ===
     RCLCPP_INFO(this->get_logger(), "Creating OCP solver...");
@@ -328,6 +344,8 @@ public:
 
 private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr sol_pose_pub_;
   rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
       left_thruster_pub_, right_thruster_pub_, debug_ce_pub_, debug_he_pub_,
@@ -354,6 +372,9 @@ private:
   std_msgs::msg::Float64 sol_time_msg, left_thruster_msg, right_thruster_msg,
       debug_ce_msg, debug_he_msg, debug_residuals_msg;
   nav_msgs::msg::Path sol_path_msg;
+  geometry_msgs::msg::PoseArray sol_array_msg;
+  int sol_array_length{10};
+  geometry_msgs::msg::PoseStamped sol_pose_msg;
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   double along_e, cross_e, ocp_cost, obs_d{std::numeric_limits<double>::max()};
@@ -515,6 +536,9 @@ private:
     sol_time_msg.data = std::chrono::duration<double>(end_t - start_t).count();
 
     sol_path_msg.header.stamp = this->get_clock()->now();
+    sol_array_msg.header.stamp = this->get_clock()->now();
+    sol_pose_msg.header.stamp = this->get_clock()->now();
+
     geometry_msgs::msg::PoseStamped tmp_pose;
 
     double sol_length = 0.0;
@@ -522,18 +546,32 @@ private:
       ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, i, "x", &xtraj[i * NX]);
       tmp_pose.pose.position.x = xtraj[i * NX];
       tmp_pose.pose.position.y = xtraj[i * NX + 1];
+      tf2::Quaternion q;
+      q.setRPY(0, 0, xtraj[i * NX + 2]);
+      tmp_pose.pose.orientation = tf2::toMsg(q);
+
       sol_path_msg.poses[i] = tmp_pose;
+
+      int stride = N_HORIZON / sol_array_length;
+      if (i % stride == 0 && i / stride < sol_array_length) {
+        sol_array_msg.poses[i / stride] = tmp_pose.pose;
+      }
 
       sol_length += std::fabs(xtraj[i * NX + 3]) * mpc_tf / N_HORIZON;
     }
 
     int sol_idx = int(var_w_at(sol_idx_base, sol_idx_weight_params,
                                sol_idx_dynamics, sol_length));
-    std::cout << "sol length: " << sol_length << std::endl;
-    std::cout << "sol idx: " << sol_idx << std::endl;
+    // std::cout << "sol length: " << sol_length << std::endl;
+    // std::cout << "sol idx: " << sol_idx << std::endl;
     ref_msg.u = xtraj[sol_idx * NX + 3];
     ref_msg.v = xtraj[sol_idx * NX + 4];
     ref_msg.psi = xtraj[sol_idx * NX + 2];
+    sol_pose_msg.pose.position.x = xtraj[sol_idx * NX];
+    sol_pose_msg.pose.position.y = xtraj[sol_idx * NX + 1];
+    tf2::Quaternion q;
+    q.setRPY(0, 0, xtraj[sol_idx * NX + 2]);
+    sol_pose_msg.pose.orientation = tf2::toMsg(q);
 
     // RCLCPP_INFO(this->get_logger(), "Tp, Ts: %f, %f", simU[0], simU[1]);
     // left_thruster_msg.data = simU[0];
@@ -550,6 +588,9 @@ private:
 
     sol_time_pub_->publish(sol_time_msg);
     sol_path_pub_->publish(sol_path_msg);
+    sol_array_pub_->publish(sol_array_msg);
+    sol_pose_pub_->publish(sol_pose_msg);
+
     if (!mpc_enabled ||
         // ocp_cost > 10000.0 ||
         status == 4) {

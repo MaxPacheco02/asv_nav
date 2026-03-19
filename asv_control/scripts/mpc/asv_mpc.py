@@ -133,8 +133,8 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.x0 = x0
 
     # Controls: normalized [-1,1] for forces, plus dt and slack
-    dt_max = 0.5
-    dt_min = -0.001
+    dt_max = 0.1
+    dt_min = -0.0001
     slack_u_max = 1.0
     slack_u_min = 0.0
 
@@ -150,6 +150,13 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.lbx = np.array([u_min, v_min, r_min])
     ocp.constraints.ubx = np.array([u_max, v_max, r_max])
     ocp.constraints.idxbx = np.array([3, 4, 5])
+
+    ocp.model.con_h_expr = vertcat(
+        u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,  # thruster 0
+        u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,  # thruster 1
+    )
+    ocp.constraints.lh = np.array([0.0, 0.0])
+    ocp.constraints.uh = np.array([1.0, 1.0])
 
     ocp.parameter_values = params
 
@@ -288,7 +295,7 @@ def main(algorithm="RTI", simulate=True):
         ]
     )
 
-    T_sim = 2000.0
+    T_sim = 1000.0
     Nsim = int(T_sim / dt)
     nx = x0.shape[0]
     nu = 5  # u_Tx, u_Ty, u_Tz, dt, slack_u
@@ -505,4 +512,4 @@ def main(algorithm="RTI", simulate=True):
 
 
 if __name__ == "__main__":
-    main(algorithm="RTI", simulate=True)
+    main(algorithm="RTI", simulate=False)

@@ -75,9 +75,10 @@ link_directories(${ACADOS_INSTALL_DIR}/lib)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp)
 # Add all generated source files
 file(GLOB ACADOS_GENERATED_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/acados_*.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*.c
   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*/*.c
 )
+list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
 
 add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
 ament_target_dependencies(mpc_node ${DEPENDENCIES})

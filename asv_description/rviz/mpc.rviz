@@ -7,7 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /State odom1/Shape1
-        - /Goal array1/Status1
       Splitter Ratio: 0.5
     Tree Height: 712
   - Class: rviz_common/Selection
@@ -212,7 +211,7 @@ Visualization Manager:
       Name: State odom
       Position Tolerance: 0.0010000000474974513
       Shape:
-        Alpha: 0.800000011920929
+        Alpha: 0.30000001192092896
         Axes Length: 1
         Axes Radius: 0.10000000149011612
         Color: 153; 193; 241
@@ -295,6 +294,47 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /azimuth/conf
       Value: true
+    - Alpha: 1
+      Arrow Length: 3
+      Axes Length: 0.30000001192092896
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 255; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 30
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mpc/sol_array
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz_default_plugins/Pose
+      Color: 0; 255; 255
+      Enabled: true
+      Head Length: 1
+      Head Radius: 1.5
+      Name: Pose
+      Shaft Length: 4
+      Shaft Radius: 0.5
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mpc/sol_pose
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -344,8 +384,8 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 5.012288570404053
-      Target Frame: world
+      Scale: 3
+      Target Frame: asv
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0
@@ -382,6 +422,21 @@ Visualization Manager:
         Near Clip Distance: 0.009999999776482582
         Scale: 124.58537292480469
         Target Frame: world
+        Value: TopDownOrtho (rviz_default_plugins)
+        X: 0
+        Y: 0
+      - Angle: -1.5707999467849731
+        Class: rviz_default_plugins/TopDownOrtho
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Name: PFollower
+        Near Clip Distance: 0.009999999776482582
+        Scale: 3
+        Target Frame: asv
         Value: TopDownOrtho (rviz_default_plugins)
         X: 0
         Y: 0

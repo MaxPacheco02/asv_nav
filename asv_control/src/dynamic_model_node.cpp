@@ -114,11 +114,15 @@ protected:
     odom.twist.twist.angular.z = velMsg.z = out.r;
 
     pose_stamped_tmp_.pose = odom.pose.pose;
-    pose_path.poses.push_back(pose_stamped_tmp_);
+    // Record one pose per second...
+    if (path_count % 100 == 0)
+      pose_path.poses.push_back(pose_stamped_tmp_);
+    // Record the last 1000 seconds
     if (pose_path.poses.size() > 1000) {
       pose_path.poses.erase(pose_path.poses.begin(),
                             pose_path.poses.begin() + 1);
     }
+    path_count++;
 
     pose_path.header.stamp =            //
         odom.header.stamp =             //
@@ -158,6 +162,7 @@ private:
   geometry_msgs::msg::PoseArray azimuth_conf_msg;
   nav_msgs::msg::Path pose_path;
   nav_msgs::msg::Odometry odom;
+  int path_count{0};
 
   rclcpp::Subscription<asv_interfaces::msg::Thrust>::SharedPtr thrust_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
