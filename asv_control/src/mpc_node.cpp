@@ -77,6 +77,17 @@ public:
     this->declare_parameter("mpc_enabled", mpc_enabled);
     mpc_enabled = this->get_parameter("mpc_enabled").as_bool();
 
+    this->declare_parameter("mpc_lookahead_dist", 5.0);
+    mpc_lookahead_dist = this->get_parameter("mpc_lookahead_dist").as_double();
+
+    lookahead_param_sub_ =
+        std::make_shared<rclcpp::ParameterEventHandler>(this);
+    auto lookahead_param_cb = [this](const rclcpp::Parameter &p) {
+      mpc_lookahead_dist = p.as_double();
+    };
+    lookahead_param_handle_ = lookahead_param_sub_->add_parameter_callback(
+        "mpc_lookahead_dist", lookahead_param_cb);
+
     // === SUBSCRIBERS ===
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/asv/state/odom", 1,
@@ -147,8 +158,10 @@ public:
                          tracking_to_avoid[i], obs_d);
 
             // Interpolate weights
-            ocp_params[N_SP + i] =
-                pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
+            // ocp_params[N_SP + i] =
+            //     pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
+            // TMP: Do not interpolate, keep weights constant...
+            ocp_params[N_SP + i] = mpc_weights[i];
           }
         });
 
@@ -291,7 +304,7 @@ public:
         this->create_publisher<std_msgs::msg::Float64MultiArray>("/mpc/debug/w",
                                                                  10);
 
-    timer_ = this->create_wall_timer(500ms, std::bind(&MPCNode::update, this));
+    timer_ = this->create_wall_timer(250ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = "world";
     sol_array_msg.header.frame_id = "world";
@@ -368,6 +381,10 @@ private:
   std::shared_ptr<rclcpp::ParameterCallbackHandle> weights_param_handle_,
       enabled_param_handle_, tf_param_handle_, s_max_dt_param_handle_;
 
+  double mpc_lookahead_dist{5.0};
+  std::shared_ptr<rclcpp::ParameterEventHandler> lookahead_param_sub_;
+  std::shared_ptr<rclcpp::ParameterCallbackHandle> lookahead_param_handle_;
+
   asv_interfaces::msg::Ref ref_msg;
   std_msgs::msg::Float64 sol_time_msg, left_thruster_msg, right_thruster_msg,
       debug_ce_msg, debug_he_msg, debug_residuals_msg;
@@ -379,13 +396,13 @@ private:
 
   double along_e, cross_e, ocp_cost, obs_d{std::numeric_limits<double>::max()};
 
-  // w_along, w_cross, w_heading, w_input, w_slack, w_surge, w_yaw, w_terminal,
+  // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{2.0,  70.0, 60.0,  0.05, 1000.0,
+  std::vector<double> mpc_weights{2.0,  70.0, 60.0,  0.05, 0.001,
                                   0.01, 0.01, 100.0, 0.0};
   std::vector<double> tracking_to_avoid{2.0, 0.004, 0.50, 0.2, 1.0,
                                         1.0, 1.0,   0.05, 1.0};
-  std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 1000.0,
+  std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 0.001,
                                         0.01, 0.01, 5.0,  0.7};
 
   // map input [min,max] to output [min,max]
@@ -430,11 +447,13 @@ private:
   };
 
   int sol_idx_base{5};
-  double sol_idx_dynamics = 6.0;
+  double sol_idx_dynamics = 3.0;
   WeightParams sol_idx_weight_params{0.1, 0.8};
 
   double mpc_tf{3.5}, mpc_s_max_dt{0.1}, s_length{0.001}, s_t{0.};
   bool mpc_enabled{false};
+  bool mpc_broken{false};
+  Eigen::Vector3d asv_breakdown;
   Eigen::Vector2d asv, nearest_obs;
 
   rclcpp::TimerBase::SharedPtr timer_;
@@ -564,9 +583,29 @@ private:
                                sol_idx_dynamics, sol_length));
     // std::cout << "sol length: " << sol_length << std::endl;
     // std::cout << "sol idx: " << sol_idx << std::endl;
-    ref_msg.u = xtraj[sol_idx * NX + 3];
-    ref_msg.v = xtraj[sol_idx * NX + 4];
+    // ref_msg.x = xtraj[sol_idx * NX + 0];
+    // ref_msg.y = xtraj[sol_idx * NX + 1];
+    // ref_msg.psi = xtraj[sol_idx * NX + 2];
+    //
+    // Find solution index at fixed distance from ASV
+    sol_idx = 1;
+    double best_dist = std::numeric_limits<double>::max();
+
+    for (int i = 1; i <= N_HORIZON; i++) {
+      double dx = xtraj[i * NX + 0] - x0[0];
+      double dy = xtraj[i * NX + 1] - x0[1];
+      double d = std::sqrt(dx * dx + dy * dy);
+      double err = std::fabs(d - mpc_lookahead_dist);
+      if (err < best_dist) {
+        best_dist = err;
+        sol_idx = i;
+      }
+    }
+
+    ref_msg.x = xtraj[sol_idx * NX + 0];
+    ref_msg.y = xtraj[sol_idx * NX + 1];
     ref_msg.psi = xtraj[sol_idx * NX + 2];
+    std::cout << "final t: " << xtraj[29 * NX + 6] << std::endl;
     sol_pose_msg.pose.position.x = xtraj[sol_idx * NX];
     sol_pose_msg.pose.position.y = xtraj[sol_idx * NX + 1];
     tf2::Quaternion q;
@@ -595,10 +634,16 @@ private:
         // ocp_cost > 10000.0 ||
         status == 4) {
       RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED");
-      ref_msg.u = 0.0;
-      ref_msg.psi = x0[2];
-      left_thruster_msg.data = 0.0;
-      right_thruster_msg.data = 0.0;
+      if (!mpc_broken) {
+        mpc_broken = true;
+        asv_breakdown << x0[0], x0[1], x0[2];
+      }
+      // ref_msg.u = 0.0;
+      ref_msg.x = asv_breakdown(0);
+      ref_msg.y = asv_breakdown(1);
+      ref_msg.psi = asv_breakdown(2);
+    } else {
+      mpc_broken = false;
     }
 
     ref_pub_->publish(ref_msg);

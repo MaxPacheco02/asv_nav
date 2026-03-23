@@ -226,7 +226,7 @@ protected:
 
       closest_p = s_[closest_idx].get_s(closest_t);
 
-      double lookahead = 30.0;
+      double lookahead = 10.0;
       // For length L, we want to find a t+dt such that s(t+dt) is at [dist]
       // from s(t) To map L to dist: L is to 1, what dist is to dt -> dt =
       // dist/L

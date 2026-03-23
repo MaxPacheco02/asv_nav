@@ -7,7 +7,7 @@ from acados_template import AcadosOcp, AcadosOcpSolver, AcadosSimSolver, AcadosS
 from asv_dynamics import export_asv_model
 import numpy as np
 import scipy.linalg
-from casadi import vertcat, sin, cos, SX
+from casadi import vertcat, sin, cos, SX, atan2
 import casadi as ca
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
@@ -79,7 +79,7 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     heading_error = sin((psi - psi_ref) / 2) ** 2
 
     # Input cost: already normalized, so u_Tx² + u_Ty² + u_Tz² ∈ [0, 3]
-    input_cost = u_Tx**2 + u_Ty**2 + u_Tz**2
+    input_cost = u_Tx**2 + u_Ty**2 + u_Tz**2 + dt**2
     surge_cost = surge**2
     sway_cost = sway**2
     yaw_cost = yaw**2
@@ -133,8 +133,8 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.x0 = x0
 
     # Controls: normalized [-1,1] for forces, plus dt and slack
-    dt_max = 0.1
-    dt_min = -0.0001
+    dt_max = 0.01
+    dt_min = -0.001
     slack_u_max = 1.0
     slack_u_min = 0.0
 
@@ -143,9 +143,9 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4])
 
     # State bounds: surge, sway, yaw
-    u_min, u_max = -8.0, 8.0
+    u_min, u_max = -0.1, 6.0
     v_min, v_max = -1.0, 1.0
-    r_min, r_max = -0.05, 0.05
+    r_min, r_max = -0.1, 0.1
 
     ocp.constraints.lbx = np.array([u_min, v_min, r_min])
     ocp.constraints.ubx = np.array([u_max, v_max, r_max])
@@ -163,14 +163,22 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     # --- SOLVER OPTIONS ---
     ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
     ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
-    ocp.solver_options.integrator_type = "ERK"
-    ocp.solver_options.sim_method_num_steps = 10  # substeps for stiff dynamics
+    # ocp.solver_options.integrator_type = "ERK"
+    # ocp.solver_options.sim_method_num_steps = 20  # substeps for stiff dynamics
+
+    ocp.solver_options.integrator_type = "IRK"
+    ocp.solver_options.sim_method_num_stages = 4  # Standard Gauss-Legendre stages
+    ocp.solver_options.sim_method_num_steps = 3
+    ocp.solver_options.sim_method_newton_iter = (
+        3  # Newton iterations for the implicit solve
+    )
+
     ocp.solver_options.qp_solver_iter_max = 200
     ocp.solver_options.nlp_solver_max_iter = 50
     ocp.solver_options.qp_solver_cond_N = N_horizon // 2
 
     ocp.solver_options.regularize_method = "PROJECT_REDUC_HESS"
-    ocp.solver_options.levenberg_marquardt = 1e-2
+    ocp.solver_options.levenberg_marquardt = 1.0
 
     ocp.solver_options.qp_solver_tol_stat = 1e-6
     ocp.solver_options.qp_solver_tol_eq = 1e-6
@@ -220,7 +228,7 @@ def get_catmull_rom_segment(p0, p1, p2, p3, alpha=1.0, tension=0.2):
     return np.array([a[0], b[0], c[0], d[0], a[1], b[1], c[1], d[1]])
 
 
-def get_triangle_verts(x, y, psi, L=5.0):
+def get_triangle_verts(x, y, psi, L=20.0):
     cos_p, sin_p = np.cos(psi), np.sin(psi)
     bow = [x + L * cos_p, y + L * sin_p]
     port = [
@@ -273,14 +281,14 @@ def compute_costs(state, spline_params, t_la_val, spline_ceil_val, in_last_s_val
 
 def main(algorithm="RTI", simulate=True):
     Tf = 50.0
-    N_horizon = 250
+    N_horizon = 50
     dt = Tf / N_horizon
 
     # State: [x, y, psi, surge, sway, yaw, t, obs...]
     x0 = np.array(
         [
             2.0,  # x
-            1.0,  # y
+            -4.0,  # y
             0.0,  # psi
             0.0,  # surge
             0.0,  # sway
@@ -306,10 +314,10 @@ def main(algorithm="RTI", simulate=True):
     t_feedback = np.zeros(Nsim)
 
     # Spline
-    p0 = np.array([-20.0, 0.0])
-    p1 = np.array([0.0, 0.0])
-    p2 = np.array([120.0, -30.0])
-    p3 = np.array([140.0, 20.0])
+    p0 = np.array([-10.0, 0.0])
+    p1 = np.array([-5.0, 0.0])
+    p2 = np.array([500.0, 200.0])
+    p3 = np.array([1300.0, -200.0])
 
     spline_params = get_catmull_rom_segment(p0, p1, p2, p3)
     print(f"Spline parameters: {spline_params}")
@@ -321,17 +329,17 @@ def main(algorithm="RTI", simulate=True):
     w_params = np.array(
         [
             0.001,  # w_along
-            1.0,  # w_cross
-            100.0,  # w_heading
+            5.0,  # w_cross
+            50.0,  # w_heading
             0.01,  # w_input
-            0.001,  # w_surge
-            0.1,  # w_sway
+            0.10,  # w_surge
+            100.0,  # w_sway
             0.0,  # w_yaw
-            1.0,  # w_terminal
+            100.0,  # w_terminal
             0.0,  # w_avoidance
         ]
     )
-    add_params = np.array([0.5, 1.0, 1.0])
+    add_params = np.array([1.0, 1.0, 1.0])
     ov_params = np.zeros(6)
 
     params = np.concatenate(
@@ -512,4 +520,5 @@ def main(algorithm="RTI", simulate=True):
 
 
 if __name__ == "__main__":
-    main(algorithm="RTI", simulate=False)
+    main(algorithm="RTI", simulate=True)
+    # main(algorithm="RTI", simulate=False)
