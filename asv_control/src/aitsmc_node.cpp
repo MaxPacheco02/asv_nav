@@ -54,10 +54,13 @@ public:
           //   control.reset_integral(0);
           // if (std::abs(msg.psi - asv_d.psi) > head_threshold)
           //   control.reset_integral(2);
-
+          asv_d.x = msg.x;
+          asv_d.y = msg.y;
           asv_d.psi = msg.psi;
-          asv_d.u = msg.u;
-          asv_d.v = msg.v;
+
+          asv_d.u = 0;
+          asv_d.v = 0;
+          asv_d.r = 0;
 
           // TODO: Consider computing feedforward (from mpc sol. or spline)
           asv_d.u_dot = 0;
@@ -73,9 +76,9 @@ public:
         this->create_publisher<asv_interfaces::msg::Thrust>("asv/thrust", 10);
 
     surge_debug_pub_ = this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
-        "aitsmc/debug/u", 10);
+        "aitsmc/debug/x", 10);
     sway_debug_pub_ = this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
-        "aitsmc/debug/v", 10);
+        "aitsmc/debug/y", 10);
     heading_debug_pub_ =
         this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
             "aitsmc/debug/psi", 10);
@@ -147,20 +150,14 @@ private:
     };
 
     AITSMCParams p;
-    p.u = AITSMCStateParams{0.0,
-                            get_param("epsilon_u"),
-                            get_param("k_alpha_u"),
-                            get_param("k_beta_u"),
-                            get_param("tc_u"),
-                            get_param("q_u"),
-                            get_param("p_u")};
-    p.v = AITSMCStateParams{0.0,
-                            get_param("epsilon_v"),
-                            get_param("k_alpha_v"),
-                            get_param("k_beta_v"),
-                            get_param("tc_v"),
-                            get_param("q_v"),
-                            get_param("p_v")};
+    p.x = AITSMCStateParams{get_param("beta_x"),    get_param("epsilon_x"),
+                            get_param("k_alpha_x"), get_param("k_beta_x"),
+                            get_param("tc_x"),      get_param("q_x"),
+                            get_param("p_x")};
+    p.y = AITSMCStateParams{get_param("beta_y"),    get_param("epsilon_y"),
+                            get_param("k_alpha_y"), get_param("k_beta_y"),
+                            get_param("tc_y"),      get_param("q_y"),
+                            get_param("p_y")};
     p.psi =
         AITSMCStateParams{get_param("beta_psi"),    get_param("epsilon_psi"),
                           get_param("k_alpha_psi"), get_param("k_beta_psi"),

@@ -25,11 +25,16 @@ using namespace std::chrono_literals;
 class RefsPublisherNode : public rclcpp::Node {
 public:
   RefsPublisherNode() : Node("refs_publisher_node") {
-    this->declare_parameter("amp_u", 0.6);
+    this->declare_parameter("amp_x", 0.6);
+    this->declare_parameter("amp_y", 0.3);
     this->declare_parameter("amp_psi", 1.2);
-    this->declare_parameter("freq_u", 0.1);
+
+    this->declare_parameter("freq_x", 0.1);
+    this->declare_parameter("freq_y", 0.12);
     this->declare_parameter("freq_psi", 0.02);
-    this->declare_parameter("off_u", 2.5);
+
+    this->declare_parameter("off_x", 2.5);
+    this->declare_parameter("off_y", 10.5);
     this->declare_parameter("off_psi", 0.0);
 
     ref_pub_ =
@@ -43,10 +48,10 @@ protected:
   void update() {
     update_params();
 
-    Eigen::Vector2d sig, sig_d;
+    Eigen::Vector3d sig, sig_d;
 
-    Eigen::Vector2d sin_ = (2 * M_PI * counter * t * freq).array().sin();
-    Eigen::Vector2d cos_ = (2 * M_PI * counter * t * freq).array().cos();
+    Eigen::Vector3d sin_ = (2 * M_PI * counter * t * freq).array().sin();
+    Eigen::Vector3d cos_ = (2 * M_PI * counter * t * freq).array().cos();
 
     // y = a * sin(2pi * f * x)
     sig = amp.cwiseProduct(sin_) + off;
@@ -54,10 +59,9 @@ protected:
     sig_d = (amp.cwiseProduct(2 * M_PI * freq)).cwiseProduct(cos_);
 
     asv_interfaces::msg::Ref ref_msg;
-    ref_msg.u = sig(0);
-    ref_msg.u_dot = sig_d(0);
-    ref_msg.psi = sig(1);
-    ref_msg.psi_dot = sig_d(1);
+    ref_msg.x = sig(0);
+    ref_msg.y = sig(1);
+    ref_msg.psi = sig(2);
     ref_pub_->publish(ref_msg);
 
     counter++;
@@ -70,15 +74,20 @@ private:
 
   int counter{0};
   double t{0.001}; // 1 KHz
-  Eigen::Vector2d amp, freq, off;
+  Eigen::Vector3d amp, freq, off;
 
   void update_params() {
-    amp(0) = this->get_parameter("amp_u").as_double();
-    amp(1) = this->get_parameter("amp_psi").as_double();
-    freq(0) = this->get_parameter("freq_u").as_double();
-    freq(1) = this->get_parameter("freq_psi").as_double();
-    off(0) = this->get_parameter("off_u").as_double();
-    off(1) = this->get_parameter("off_psi").as_double();
+    amp(0) = this->get_parameter("amp_x").as_double();
+    amp(1) = this->get_parameter("amp_y").as_double();
+    amp(2) = this->get_parameter("amp_psi").as_double();
+
+    freq(0) = this->get_parameter("freq_x").as_double();
+    freq(1) = this->get_parameter("freq_y").as_double();
+    freq(2) = this->get_parameter("freq_psi").as_double();
+
+    off(0) = this->get_parameter("off_x").as_double();
+    off(1) = this->get_parameter("off_y").as_double();
+    off(2) = this->get_parameter("off_psi").as_double();
   }
 };
 

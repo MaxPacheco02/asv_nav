@@ -1,13 +1,16 @@
-# Surge, Sway, and Heading reference msg
+# Modular 3 DOF Reference msg
 
-# Surge
-float64 u 
+# Inertial frame references
+float64 x
+float64 y
+float64 psi
+
+# Body frame references
+float64 u # surge
 float64 u_dot
 
-# Sway
-float64 v
+float64 v # sway
 float64 v_dot
 
-# Heading
-float64 psi 
-float64 psi_dot
+float64 r # yaw
+float64 r_dot 
