@@ -19,8 +19,7 @@ AITSMC::AITSMC(const AITSMCParams &params) {
   K = Eigen::Vector3d::Zero();
   K_dot_last = Eigen::Vector3d::Zero();
 
-  // model = DynamicModel(Eigen::Vector3d{0, 0, 0});
-  beta << 0, 0, p.psi.beta;
+  beta << p.x.beta, p.y.beta, p.psi.beta;
 }
 
 double AITSMC::normalize_angle(double angle_in) {
@@ -36,41 +35,63 @@ double AITSMC::angle_dist(double ang1, double ang2) {
   return normalize_angle(diff);
 }
 
+Eigen::Matrix3d AITSMC::rotation_matrix(double ang) {
+  Eigen::Matrix3d out;
+  out << cos(ang), -sin(ang), 0, //
+      sin(ang), cos(ang), 0,     //
+      0, 0, 1;
+  return out;
+}
+
+Eigen::Matrix3d AITSMC::rotation_matrix_dot(double ang, double r) {
+  Eigen::Matrix3d out;
+  out << -sin(ang), -cos(ang), 0, //
+      cos(ang), -sin(ang), 0,     //
+      0, 0, 0;
+  return r * out;
+}
+
 Azimuth AITSMC::update(const State &state, const State &setpoint) {
+  Eigen::Matrix3d J = rotation_matrix(state.psi);
+  Eigen::Matrix3d J_inv = J.transpose();
+  Eigen::Matrix3d J_dot = rotation_matrix_dot(state.psi, state.r);
   Eigen::Vector3d eta(state.x, state.y, state.psi);
   Eigen::Vector3d eta_d(setpoint.x, setpoint.y, setpoint.psi);
   Eigen::Vector3d nu(state.u, state.v, state.r);
-  Eigen::Vector3d nu_d(setpoint.u, setpoint.v, setpoint.r);
-  Eigen::Vector3d nu_dot_d(setpoint.u_dot, setpoint.v_dot, setpoint.r_dot);
+  Eigen::Vector3d eta_dot = J * nu;
+  Eigen::Vector3d eta_dot_d(setpoint.u, setpoint.v, setpoint.r);
+  Eigen::Vector3d eta_dot_dot_d(setpoint.u_dot, setpoint.v_dot, setpoint.r_dot);
 
   // INTEGRAL ERROR
   // e_i_dot = sign(err_n)*|err_n|^(q_n/p_n)
-  Eigen::Vector3d err(nu_d(0) - nu(0), nu_d(1) - nu(1),
+  Eigen::Vector3d err(eta_d(0) - eta(0), eta_d(1) - eta(1),
                       angle_dist(eta_d(2), eta(2)));
-  Eigen::Vector3d qp(p.u.q / p.u.p, p.v.q / p.v.p, p.psi.q / p.psi.p);
+  Eigen::Vector3d qp(p.x.q / p.x.p, p.y.q / p.y.p, p.psi.q / p.psi.p);
   Eigen::Array3d qp1 = (Eigen::Vector3d::Ones() - qp).array();
-  Eigen::Array3d tc(p.u.tc, p.v.tc, p.psi.tc);
+  Eigen::Array3d tc(p.x.tc, p.y.tc, p.psi.tc);
   Eigen::Vector3d e_qp = err.cwiseAbs().array().pow(qp.array());
   Eigen::Vector3d e_i_dot = err.cwiseSign().cwiseProduct(e_qp);
 
   // INITIALIZE ALPHA
   if (!initialized) {
     alpha = (err.array().abs().pow(qp1) / (tc * qp1)).max(1e-6);
+    alpha << 1e-6, 1e-6, 1e-6;
     e_i = -err.cwiseQuotient(alpha);
     initialized = true;
   }
 
   // SLIDING SURFACE
-  // s = nu_d - nu + beta*(eta_d-eta) + alpha*e_I
+  // s = e_dot + beta*(e) + alpha*e_I
   e_i = integral_step * (e_i_dot + e_i_dot_last) / 2 + e_i;
   e_i_dot_last = e_i_dot;
+  Eigen::Vector3d err_dot = eta_dot_d - eta_dot;
   Eigen::Vector3d s =
-      nu_d - nu + beta.cwiseProduct(err) + alpha.cwiseProduct(e_i);
+      err_dot + beta.cwiseProduct(err) + alpha.cwiseProduct(e_i);
 
   // ADAPTIVE GAIN
   // K_dot = sqrt(K_a)*sqrt(|s|) - sqrt(K_b)*K^2
-  Eigen::Vector3d K_a(p.u.k_alpha, p.v.k_alpha, p.psi.k_alpha);
-  Eigen::Vector3d K_b(p.u.k_beta, p.v.k_beta, p.psi.k_beta);
+  Eigen::Vector3d K_a(p.x.k_alpha, p.y.k_alpha, p.psi.k_alpha);
+  Eigen::Vector3d K_b(p.x.k_beta, p.y.k_beta, p.psi.k_beta);
   Eigen::Vector3d s_abs_sqrt = s.cwiseAbs().cwiseSqrt();
   Eigen::Vector3d K_dot = K_a.cwiseSqrt().cwiseProduct(s_abs_sqrt) -
                           K_b.cwiseProduct(K.cwiseProduct(K));
@@ -78,7 +99,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   K_dot_last = K_dot;
 
   // AUXLIARY CONTROL
-  Eigen::Vector3d eps(p.u.epsilon, p.v.epsilon, p.psi.epsilon);
+  Eigen::Vector3d eps(p.x.epsilon, p.y.epsilon, p.psi.epsilon);
   Eigen::Vector3d sign_s = s.cwiseSign();
   Eigen::Vector3d U_aux = -K.cwiseProduct(s_abs_sqrt).cwiseProduct(sign_s) -
                           eps.cwiseProduct(K).cwiseProduct(s.cwiseAbs());
@@ -88,8 +109,10 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
 
   // CONTROL SIGNAL
   Eigen::Vector3d U =
-      dyn.g_inv * (nu_dot_d - dyn.f + beta.cwiseProduct(nu_d - nu) +
-                   alpha.cwiseProduct(e_i_dot) - U_aux);
+      dyn.g_inv *
+      (J_inv * (eta_dot_dot_d - J_dot * nu + beta.cwiseProduct(err_dot) +
+                alpha.cwiseProduct(e_i_dot) - U_aux) -
+       dyn.f);
 
   // ALLOCATE FORCES
   Azimuth out;

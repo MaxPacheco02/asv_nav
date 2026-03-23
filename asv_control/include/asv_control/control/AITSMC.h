@@ -9,7 +9,7 @@ struct AITSMCStateParams {
 };
 
 struct AITSMCParams {
-  AITSMCStateParams u, v, psi;
+  AITSMCStateParams x, y, psi;
 };
 
 struct AITSMCDebugData {
@@ -26,6 +26,8 @@ public:
   double normalize_angle(double angle_in);
   double angle_dist(double ang1, double ang2);
   void reset_integral(int idx);
+  Eigen::Matrix3d rotation_matrix(double ang);
+  Eigen::Matrix3d rotation_matrix_dot(double ang, double r);
 
   [[nodiscard]] AITSMCDebugData getDebugData(int idx) const {
     return debugData[idx];
@@ -44,15 +46,7 @@ private:
   Eigen::Vector3d e_i_dot_last;
   Eigen::Vector3d K;
   Eigen::Vector3d K_dot_last;
-  double e_psi_last{0}, e_psi_last_last{0};
-
-  double Ka_u{0}, Ka_psi{0};
-  double ei_u{0}, ei_psi{0};
-
-  double Ka_dot_last_u{0}, Ka_dot_last_psi{0};
 
   std::array<AITSMCDebugData, 3> debugData;
-
   DynamicModel model;
-  double g_u{0}, g_psi{0};
 };
