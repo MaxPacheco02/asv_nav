@@ -25,6 +25,7 @@ public:
 
   double normalize_angle(double angle_in);
   double angle_dist(double ang1, double ang2);
+  void reset_integral();
   void reset_integral(int idx);
   Eigen::Matrix3d rotation_matrix(double ang);
   Eigen::Matrix3d rotation_matrix_dot(double ang, double r);

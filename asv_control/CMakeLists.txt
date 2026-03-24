@@ -51,8 +51,11 @@ add_executable(dynamic_model_node
 target_include_directories(dynamic_model_node PRIVATE include)
 ament_target_dependencies(dynamic_model_node ${DEPENDENCIES})
 
-add_executable(refs_publisher_node src/refs_publisher_node.cpp)
-ament_target_dependencies(refs_publisher_node ${DEPENDENCIES})
+add_executable(sine_refs_node src/debug/aitsmc/sine_refs_node.cpp)
+ament_target_dependencies(sine_refs_node ${DEPENDENCIES})
+
+add_executable(rviz_refs_node src/debug/aitsmc/rviz_refs_node.cpp)
+ament_target_dependencies(rviz_refs_node ${DEPENDENCIES})
 
 add_executable(spline_publisher_node src/spline_publisher_node.cpp)
 ament_target_dependencies(spline_publisher_node ${DEPENDENCIES})
@@ -88,7 +91,8 @@ target_link_libraries(mpc_node acados hpipm blasfeo m)
 install(TARGETS
   aitsmc_node
   dynamic_model_node
-  refs_publisher_node
+  sine_refs_node 
+  rviz_refs_node 
   spline_publisher_node
   mpc_node
   DESTINATION lib/${PROJECT_NAME})

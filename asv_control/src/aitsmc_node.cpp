@@ -50,10 +50,13 @@ public:
 
     reference_sub_ = this->create_subscription<asv_interfaces::msg::Ref>(
         "asv/state/ref", 10, [this](const asv_interfaces::msg::Ref &msg) {
+          if (abs(pow(msg.x - asv_d.x, 2) + pow(msg.y - asv_d.y, 2)) > 30.0)
+            control.reset_integral();
           // if (std::abs(msg.u - asv_d.u) > surge_threshold)
           //   control.reset_integral(0);
           // if (std::abs(msg.psi - asv_d.psi) > head_threshold)
           //   control.reset_integral(2);
+
           asv_d.x = msg.x;
           asv_d.y = msg.y;
           asv_d.psi = msg.psi;
@@ -68,6 +71,12 @@ public:
           asv_d.r_dot = 0;
 
           ref_received = true;
+
+          tf2::Quaternion q;
+          q.setRPY(0, 0, msg.psi);
+          ref_pose_msg.pose.position.x = msg.x;
+          ref_pose_msg.pose.position.y = msg.y;
+          ref_pose_msg.pose.orientation = tf2::toMsg(q);
         });
 
     tmp_thrust_pub_ =
@@ -83,8 +92,13 @@ public:
         this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
             "aitsmc/debug/psi", 10);
 
+    ref_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/aitsmc/ref", 10);
+
     update_timer_ =
         this->create_wall_timer(10ms, std::bind(&AitsmcNode::update, this));
+
+    ref_pose_msg.header.frame_id = "world";
   }
 
 protected:
@@ -118,6 +132,9 @@ protected:
     asv_interfaces::msg::AitsmcDebug heading_debug_msg;
     heading_debug_msg = debug_to_ros(control.getDebugData(2));
     heading_debug_pub_->publish(heading_debug_msg);
+
+    ref_pose_msg.header.stamp = this->get_clock()->now();
+    ref_pose_pub_->publish(ref_pose_msg);
   }
 
 private:
@@ -126,9 +143,12 @@ private:
   rclcpp::Publisher<asv_interfaces::msg::AitsmcDebug>::SharedPtr
       surge_debug_pub_,
       sway_debug_pub_, heading_debug_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_pose_pub_;
 
   rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr reference_sub_;
+
+  geometry_msgs::msg::PoseStamped ref_pose_msg;
 
   rclcpp::TimerBase::SharedPtr update_timer_;
 

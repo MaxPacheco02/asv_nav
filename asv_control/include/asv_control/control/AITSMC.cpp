@@ -75,7 +75,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   // INITIALIZE ALPHA
   if (!initialized) {
     alpha = (err.array().abs().pow(qp1) / (tc * qp1)).max(1e-6);
-    alpha << 1e-6, 1e-6, 1e-6;
+    // alpha << 1e-6, 1e-6, 1e-6;
     e_i = -err.cwiseQuotient(alpha);
     initialized = true;
   }
@@ -120,22 +120,27 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   double Ty = U(1);
   double Tz = U(2);
 
-  double thrust_dir = atan2(Ty, Tx); // average angle
-  double Txy = std::hypot(Tx, Ty);
-  double delta = atan2(Tz, model.lx0 * Txy); // split angle for yaw
-  double force = Txy / (2.0 * cos(delta));
+  // Split Tx evenly between front and back thrusters
+  double Fx0 = Tx / 2.0;
+  double Fx1 = Tx / 2.0;
 
-  // Clamp force
-  if (force > model.u_max) {
-    double scale = model.u_max / force;
-    force = model.u_max;
-    // Tx, Ty, Tz all scale proportionally
+  // Solve for Fy0 and Fy1 to satisfy both Ty and Tz
+  // Since model.lx1 = -model.lx0, Tz = model.lx0 * (Fy0 - Fy1)
+  double Fy0 = (Ty + Tz / model.lx0) / 2.0;
+  double Fy1 = (Ty - Tz / model.lx0) / 2.0;
+
+  out.force0 = std::hypot(Fx0, Fy0);
+  out.force1 = std::hypot(Fx1, Fy1);
+  out.ang0 = std::atan2(Fy0, Fx0);
+  out.ang1 = std::atan2(Fy1, Fx1);
+
+  // Clamp forces
+  if (out.force0 > model.u_max || out.force1 > model.u_max) {
+    double max_f = std::max(out.force0, out.force1);
+    double scale = model.u_max / max_f;
+    out.force0 *= scale;
+    out.force1 *= scale;
   }
-
-  out.ang0 = thrust_dir + delta;
-  out.ang1 = thrust_dir - delta;
-  out.force0 = force;
-  out.force1 = force;
 
   // Printing for debug
   Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
@@ -171,4 +176,13 @@ void AITSMC::reset_integral(int idx) {
   e_i_dot_last(idx) = 0.0;
   K(idx) = 0.0;
   K_dot_last(idx) = 0.0;
+  initialized = false;
+}
+
+void AITSMC::reset_integral() {
+  e_i = Eigen::Vector3d::Zero();
+  e_i_dot_last = Eigen::Vector3d::Zero();
+  K = Eigen::Vector3d::Zero();
+  K_dot_last = Eigen::Vector3d::Zero();
+  initialized = false;
 }
