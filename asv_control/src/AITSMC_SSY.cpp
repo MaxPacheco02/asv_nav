@@ -1,74 +1,22 @@
-#include "AITSMC.h"
-#include "asv_control/model/dynamic_model.h"
-#include <Eigen/src/Core/Matrix.h>
-#include <algorithm>
-#include <cmath>
-#include <iostream>
+#include "asv_control/control/AITSMC_SSY.h"
 
-AITSMC::AITSMC() {
-  e_i = Eigen::Vector3d::Zero();
-  e_i_dot_last = Eigen::Vector3d::Zero();
-  K = Eigen::Vector3d::Zero();
-  K_dot_last = Eigen::Vector3d::Zero();
-}
+AITSMC_SSY::AITSMC_SSY() = default;
 
-AITSMC::AITSMC(const AITSMCParams &params) {
-  p = params;
-  e_i = Eigen::Vector3d::Zero();
-  e_i_dot_last = Eigen::Vector3d::Zero();
-  K = Eigen::Vector3d::Zero();
-  K_dot_last = Eigen::Vector3d::Zero();
+AITSMC_SSY::AITSMC_SSY(const AITSMC_SSY_Params &params) : p(params) {}
 
-  beta << p.x.beta, p.y.beta, p.psi.beta;
-}
-
-double AITSMC::normalize_angle(double angle_in) {
-  double angle_out = std::fmod(angle_in + M_PI, 2 * M_PI);
-  if (angle_out < 0) {
-    angle_out += 2 * M_PI;
-  }
-  return angle_out - M_PI;
-}
-
-double AITSMC::angle_dist(double ang1, double ang2) {
-  double diff = ang1 - ang2;
-  return normalize_angle(diff);
-}
-
-Eigen::Matrix3d AITSMC::rotation_matrix(double ang) {
-  Eigen::Matrix3d out;
-  out << cos(ang), -sin(ang), 0, //
-      sin(ang), cos(ang), 0,     //
-      0, 0, 1;
-  return out;
-}
-
-Eigen::Matrix3d AITSMC::rotation_matrix_dot(double ang, double r) {
-  Eigen::Matrix3d out;
-  out << -sin(ang), -cos(ang), 0, //
-      cos(ang), -sin(ang), 0,     //
-      0, 0, 0;
-  return r * out;
-}
-
-Azimuth AITSMC::update(const State &state, const State &setpoint) {
-  Eigen::Matrix3d J = rotation_matrix(state.psi);
-  Eigen::Matrix3d J_inv = J.transpose();
-  Eigen::Matrix3d J_dot = rotation_matrix_dot(state.psi, state.r);
+Azimuth AITSMC_SSY::update(const State &state, const State &setpoint) {
   Eigen::Vector3d eta(state.x, state.y, state.psi);
   Eigen::Vector3d eta_d(setpoint.x, setpoint.y, setpoint.psi);
   Eigen::Vector3d nu(state.u, state.v, state.r);
-  Eigen::Vector3d eta_dot = J * nu;
-  Eigen::Vector3d eta_dot_d(setpoint.u, setpoint.v, setpoint.r);
-  Eigen::Vector3d eta_dot_dot_d(setpoint.u_dot, setpoint.v_dot, setpoint.r_dot);
+  Eigen::Vector3d nu_d(setpoint.u, setpoint.v, setpoint.r);
+  Eigen::Vector3d nu_dot_d(setpoint.u_dot, setpoint.v_dot, setpoint.r_dot);
 
   // INTEGRAL ERROR
-  // e_i_dot = sign(err_n)*|err_n|^(q_n/p_n)
-  Eigen::Vector3d err(eta_d(0) - eta(0), eta_d(1) - eta(1),
-                      angle_dist(eta_d(2), eta(2)));
-  Eigen::Vector3d qp(p.x.q / p.x.p, p.y.q / p.y.p, p.psi.q / p.psi.p);
+  // e_i_dot = sign(err)*|err|^(q/p)
+  Eigen::Vector3d err = nu_d - nu;
+  Eigen::Vector3d qp(p.u.q / p.u.p, p.v.q / p.v.p, p.r.q / p.r.p);
   Eigen::Array3d qp1 = (Eigen::Vector3d::Ones() - qp).array();
-  Eigen::Array3d tc(p.x.tc, p.y.tc, p.psi.tc);
+  Eigen::Array3d tc(p.u.tc, p.v.tc, p.r.tc);
   Eigen::Vector3d e_qp = err.cwiseAbs().array().pow(qp.array());
   Eigen::Vector3d e_i_dot = err.cwiseSign().cwiseProduct(e_qp);
 
@@ -81,17 +29,15 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   }
 
   // SLIDING SURFACE
-  // s = e_dot + beta*(e) + alpha*e_I
+  // s = e + alpha*e_I
   e_i = integral_step * (e_i_dot + e_i_dot_last) / 2 + e_i;
   e_i_dot_last = e_i_dot;
-  Eigen::Vector3d err_dot = eta_dot_d - eta_dot;
-  Eigen::Vector3d s =
-      err_dot + beta.cwiseProduct(err) + alpha.cwiseProduct(e_i);
+  Eigen::Vector3d s = err + alpha.cwiseProduct(e_i);
 
   // ADAPTIVE GAIN
   // K_dot = sqrt(K_a)*sqrt(|s|) - sqrt(K_b)*K^2
-  Eigen::Vector3d K_a(p.x.k_alpha, p.y.k_alpha, p.psi.k_alpha);
-  Eigen::Vector3d K_b(p.x.k_beta, p.y.k_beta, p.psi.k_beta);
+  Eigen::Vector3d K_a(p.u.k_alpha, p.v.k_alpha, p.r.k_alpha);
+  Eigen::Vector3d K_b(p.u.k_beta, p.v.k_beta, p.r.k_beta);
   Eigen::Vector3d s_abs_sqrt = s.cwiseAbs().cwiseSqrt();
   Eigen::Vector3d K_dot = K_a.cwiseSqrt().cwiseProduct(s_abs_sqrt) -
                           K_b.cwiseProduct(K.cwiseProduct(K));
@@ -99,7 +45,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
   K_dot_last = K_dot;
 
   // AUXLIARY CONTROL
-  Eigen::Vector3d eps(p.x.epsilon, p.y.epsilon, p.psi.epsilon);
+  Eigen::Vector3d eps(p.u.epsilon, p.v.epsilon, p.r.epsilon);
   Eigen::Vector3d sign_s = s.cwiseSign();
   Eigen::Vector3d U_aux = -K.cwiseProduct(s_abs_sqrt).cwiseProduct(sign_s) -
                           eps.cwiseProduct(K).cwiseProduct(s.cwiseAbs());
@@ -109,10 +55,7 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
 
   // CONTROL SIGNAL
   Eigen::Vector3d U =
-      dyn.g_inv *
-      (J_inv * (eta_dot_dot_d - J_dot * nu + beta.cwiseProduct(err_dot) +
-                alpha.cwiseProduct(e_i_dot) - U_aux) -
-       dyn.f);
+      dyn.g_inv * (nu_dot_d + alpha.cwiseProduct(e_i_dot) - U_aux - dyn.f);
 
   // ALLOCATE FORCES
   Azimuth out;
@@ -169,20 +112,4 @@ Azimuth AITSMC::update(const State &state, const State &setpoint) {
     debugData[i].U = U(i);
   }
   return out;
-}
-
-void AITSMC::reset_integral(int idx) {
-  e_i(idx) = 0.0;
-  e_i_dot_last(idx) = 0.0;
-  K(idx) = 0.0;
-  K_dot_last(idx) = 0.0;
-  initialized = false;
-}
-
-void AITSMC::reset_integral() {
-  e_i = Eigen::Vector3d::Zero();
-  e_i_dot_last = Eigen::Vector3d::Zero();
-  K = Eigen::Vector3d::Zero();
-  K_dot_last = Eigen::Vector3d::Zero();
-  initialized = false;
 }

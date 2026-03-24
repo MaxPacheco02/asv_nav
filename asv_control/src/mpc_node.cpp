@@ -510,38 +510,6 @@ private:
                             &rti_phase);
     status = asv_dynamics_acados_solve(ocp_capsule);
 
-    // Store previous cost
-    // static double prev_cost = 0.0;
-
-    // // Get current cost
-    // ocp_nlp_eval_cost(nlp_solver, nlp_in, nlp_out);
-    // ocp_nlp_get(nlp_solver, "cost_value", &ocp_cost);
-    // debug_residuals_msg.data = ocp_cost;
-
-    // if (status == 4)
-    // {
-    //     double residuals[4];
-    //     ocp_nlp_get(nlp_solver, "res_stat", &residuals[0]);
-    //     ocp_nlp_get(nlp_solver, "res_eq", &residuals[1]);
-    //     ocp_nlp_get(nlp_solver, "res_ineq", &residuals[2]);
-    //     ocp_nlp_get(nlp_solver, "res_comp", &residuals[3]);
-    //     RCLCPP_INFO(this->get_logger(),
-    //                 "Residuals: [%.2e, %.2e, %.2e, %.2e]",
-    //                 residuals[0], residuals[1], residuals[2], residuals[3]);
-
-    //     double max_res = std::max({std::abs(residuals[0]),
-    //     std::abs(residuals[1]),
-    //                                std::abs(residuals[2]),
-    //                                std::abs(residuals[3])});
-    //     if (max_res > 1e-6)
-    //     {
-    //         RCLCPP_WARN(this->get_logger(),
-    //                     "QP failed: res=[%.2e, %.2e, %.2e, %.2e]",
-    //                     residuals[0], residuals[1], residuals[2],
-    //                     residuals[3]);
-    //     }
-    // }
-
     // Get optimal control
     ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, 0, "u", simU);
 
@@ -598,6 +566,9 @@ private:
     ref_msg.x = xtraj[sol_idx * NX + 0];
     ref_msg.y = xtraj[sol_idx * NX + 1];
     ref_msg.psi = xtraj[sol_idx * NX + 2];
+    ref_msg.u = xtraj[sol_idx * NX + 3];
+    ref_msg.v = xtraj[sol_idx * NX + 4];
+    ref_msg.r = xtraj[sol_idx * NX + 5];
 
     // RCLCPP_INFO(this->get_logger(), "Tp, Ts: %f, %f", simU[0], simU[1]);
     // left_thruster_msg.data = simU[0];
@@ -624,10 +595,12 @@ private:
         mpc_broken = true;
         asv_breakdown << x0[0], x0[1], x0[2];
       }
-      // ref_msg.u = 0.0;
       ref_msg.x = asv_breakdown(0);
       ref_msg.y = asv_breakdown(1);
       ref_msg.psi = asv_breakdown(2);
+      ref_msg.u = 0.0;
+      ref_msg.v = 0.0;
+      ref_msg.r = 0.0;
     } else {
       mpc_broken = false;
     }

@@ -1,4 +1,4 @@
-#include "dynamic_model.h"
+#include "asv_control/model/dynamic_model.h"
 
 DynamicModel::DynamicModel() : DynamicModel(Eigen::Vector3d{0, 0, 0}) { ; }
 
