@@ -1,5 +1,4 @@
-#include <asv_interfaces/msg/detail/ref__struct.hpp>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <geometry_msgs/msg/detail/pose_array__struct.hpp>
 #include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
 #include <limits>
@@ -77,7 +76,7 @@ public:
     this->declare_parameter("mpc_enabled", mpc_enabled);
     mpc_enabled = this->get_parameter("mpc_enabled").as_bool();
 
-    this->declare_parameter("mpc_lookahead_dist", 5.0);
+    this->declare_parameter("mpc_lookahead_dist", 30.0);
     mpc_lookahead_dist = this->get_parameter("mpc_lookahead_dist").as_double();
 
     lookahead_param_sub_ =
@@ -301,7 +300,7 @@ public:
         this->create_publisher<std_msgs::msg::Float64MultiArray>("/mpc/debug/w",
                                                                  10);
 
-    timer_ = this->create_wall_timer(250ms, std::bind(&MPCNode::update, this));
+    timer_ = this->create_wall_timer(100ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = "world";
     sol_array_msg.header.frame_id = "world";
@@ -376,7 +375,7 @@ private:
   std::shared_ptr<rclcpp::ParameterCallbackHandle> weights_param_handle_,
       enabled_param_handle_, tf_param_handle_, s_max_dt_param_handle_;
 
-  double mpc_lookahead_dist{5.0};
+  double mpc_lookahead_dist{30.0};
   std::shared_ptr<rclcpp::ParameterEventHandler> lookahead_param_sub_;
   std::shared_ptr<rclcpp::ParameterCallbackHandle> lookahead_param_handle_;
 
@@ -388,12 +387,15 @@ private:
   int sol_array_length{10};
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
-  double along_e, cross_e, ocp_cost, obs_d{std::numeric_limits<double>::max()};
+  Eigen::Vector3d nu_ref;
+  Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95};
+
+  double along_e, cross_e, obs_d{std::numeric_limits<double>::max()};
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{2.0,  70.0, 60.0,  0.05, 0.001,
-                                  0.01, 0.01, 100.0, 0.0};
+  std::vector<double> mpc_weights{0.05,  5.0,   100.0, 0.01, 0.1,
+                                  100.0, 0.001, 100.0, 0.0};
   std::vector<double> tracking_to_avoid{2.0, 0.004, 0.50, 0.2, 1.0,
                                         1.0, 1.0,   0.05, 1.0};
   std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 0.001,
@@ -540,16 +542,8 @@ private:
       sol_length += std::fabs(xtraj[i * NX + 3]) * mpc_tf / N_HORIZON;
     }
 
-    int sol_idx = int(var_w_at(sol_idx_base, sol_idx_weight_params,
-                               sol_idx_dynamics, sol_length));
-    // std::cout << "sol length: " << sol_length << std::endl;
-    // std::cout << "sol idx: " << sol_idx << std::endl;
-    // ref_msg.x = xtraj[sol_idx * NX + 0];
-    // ref_msg.y = xtraj[sol_idx * NX + 1];
-    // ref_msg.psi = xtraj[sol_idx * NX + 2];
-    //
     // Find solution index at fixed distance from ASV
-    sol_idx = 1;
+    int sol_idx = 1;
     double best_dist = std::numeric_limits<double>::max();
 
     for (int i = 1; i <= N_HORIZON; i++) {
@@ -563,16 +557,14 @@ private:
       }
     }
 
+    filter_sol(Eigen::Vector3d{xtraj[sol_idx * NX + 3], xtraj[sol_idx * NX + 4],
+                               xtraj[sol_idx * NX + 5]});
     ref_msg.x = xtraj[sol_idx * NX + 0];
     ref_msg.y = xtraj[sol_idx * NX + 1];
     ref_msg.psi = xtraj[sol_idx * NX + 2];
-    ref_msg.u = xtraj[sol_idx * NX + 3];
-    ref_msg.v = xtraj[sol_idx * NX + 4];
-    ref_msg.r = xtraj[sol_idx * NX + 5];
-
-    // RCLCPP_INFO(this->get_logger(), "Tp, Ts: %f, %f", simU[0], simU[1]);
-    // left_thruster_msg.data = simU[0];
-    // right_thruster_msg.data = simU[1];
+    ref_msg.u = nu_ref(0);
+    ref_msg.v = nu_ref(1);
+    ref_msg.r = nu_ref(2);
 
     debug_ce_msg.data = get_crosstrack_e();
     debug_he_msg.data = get_heading_e();
@@ -708,6 +700,11 @@ private:
 
   double distance(Eigen::Vector2d a, Eigen::Vector2d b) {
     return (a - b).norm();
+  }
+
+  void filter_sol(const Eigen::Vector3d &new_sol) {
+    nu_ref = nu_alpha.cwiseProduct(nu_ref) +
+             (Eigen::Vector3d::Ones() - nu_alpha).cwiseProduct(new_sol);
   }
 };
 

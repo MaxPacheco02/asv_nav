@@ -196,7 +196,8 @@ def export_asv_model() -> ASVAcadosModel:
     # =========================================================================
     surge_abs = fabs(surge)
     sway_abs = fabs(sway)
-    yaw_abs = fabs(yaw)
+    # yaw_abs = fabs(yaw)
+    yaw_abs = 0.0  # for large ships
 
     d0 = -Xuu * surge_abs
     d1 = -Yvv * sway_abs - Yrv * yaw_abs

@@ -217,7 +217,7 @@ protected:
         closest_p_tmp = s_[i].get_s(closest_t_tmp);
 
         if (distance(asv, closest_p_tmp) < closest_dist &&
-            fabs(i - closest_idx) <= 1) {
+            abs(i - closest_idx) <= 1) {
           closest_t = closest_t_tmp;
           closest_dist = distance(asv, closest_p_tmp);
           closest_idx = i;

@@ -520,5 +520,5 @@ def main(algorithm="RTI", simulate=True):
 
 
 if __name__ == "__main__":
-    main(algorithm="RTI", simulate=True)
-    # main(algorithm="RTI", simulate=False)
+    # main(algorithm="RTI", simulate=True)
+    main(algorithm="RTI", simulate=False)

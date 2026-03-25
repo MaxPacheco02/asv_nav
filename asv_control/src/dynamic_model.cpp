@@ -106,6 +106,7 @@ DecomposedDyn DynamicModel::get_decomposed_dyn(const Eigen::Vector3d &nu_) {
   auto nu_abs = nu_.cwiseAbs();
   auto [surge_abs, sway_abs, yaw_abs] =
       std::make_tuple(nu_abs.x(), nu_abs.y(), nu_abs.z());
+  yaw_abs = 0.0; // Simplified for large boats (7.24)
   double d0 = -Xuu * surge_abs;
   double d1 = -Yvv * sway_abs - Yrv * yaw_abs;
   double d2 = -Yvr * sway_abs - Yrr * yaw_abs;
