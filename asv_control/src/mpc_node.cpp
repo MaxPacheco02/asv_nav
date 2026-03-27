@@ -26,6 +26,7 @@
 // ROS deps
 #include "rclcpp/rclcpp.hpp"
 
+#include "asv_interfaces/msg/obstacle_list.hpp"
 #include "asv_interfaces/msg/ref.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -34,7 +35,6 @@
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_srvs/srv/empty.hpp"
-#include "usv_interfaces/msg/object_list.hpp"
 
 #define NX ASV_DYNAMICS_NX
 #define NU ASV_DYNAMICS_NU
@@ -156,11 +156,15 @@ public:
                 var_w_at(avoidance_weights[i], avoidance_weights_inputs[i],
                          tracking_to_avoid[i], obs_d);
 
+            // TODO: Bring back variable weights!
             // Interpolate weights
             // ocp_params[N_SP + i] =
             //     pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
-            // TMP: Do not interpolate, keep weights constant...
-            ocp_params[N_SP + i] = mpc_weights[i];
+
+            // ocp_params[N_SP + i] =
+            //     mpc_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
+
+            ocp_params[N_SP + i] = avoidance_weights[i];
           }
         });
 
@@ -190,18 +194,18 @@ public:
             });
 
     obstacle_list_sub_ =
-        this->create_subscription<usv_interfaces::msg::ObjectList>(
-            "/obj_n_nearest_list", 10,
-            [this](const usv_interfaces::msg::ObjectList &msg) {
-              if ((int)msg.obj_list.size() < n_obs)
+        this->create_subscription<asv_interfaces::msg::ObstacleList>(
+            "/mpc/near_obs", 10,
+            [this](const asv_interfaces::msg::ObstacleList &msg) {
+              if ((int)msg.obs_list.size() < n_obs)
                 return;
               for (int i = 0; i < n_obs; i++) {
-                x0[7 + i * 2] = msg.obj_list[i].x;
-                x0[7 + 1 + i * 2] = msg.obj_list[i].y;
+                x0[7 + i * 2] = msg.obs_list[i].x;
+                x0[7 + 1 + i * 2] = msg.obs_list[i].y;
 
                 int param_idx = N_SP + N_WP + N_AP;
-                ocp_params[param_idx + i * 2] = msg.obj_list[i].v_x;
-                ocp_params[param_idx + 1 + i * 2] = msg.obj_list[i].v_y;
+                ocp_params[param_idx + i * 2] = msg.obs_list[i].v_x;
+                ocp_params[param_idx + 1 + i * 2] = msg.obs_list[i].v_y;
               }
             });
 
@@ -220,7 +224,7 @@ public:
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
 
             // Set zero controls
-            double u_zero[NU] = {0.0, 0.0, 0.0, 0.0, 0.0};
+            double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u",
                             u_zero);
           }
@@ -233,7 +237,7 @@ public:
     weights_param_sub_ = std::make_shared<rclcpp::ParameterEventHandler>(this);
     auto weights_param_cb = [this](const rclcpp::Parameter &p) {
       mpc_weights = p.as_double_array();
-      for (int i = 0; i < mpc_weights.size(); i++) {
+      for (size_t i = 0; i < mpc_weights.size(); i++) {
         avoidance_weights[i] = mpc_weights[i] * tracking_to_avoid[i];
       }
       mpc_weights[8] = 0.0;
@@ -365,7 +369,7 @@ private:
       spline_params_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr spline_t_sub_,
       spline_t_la_sub_, spline_length_sub_;
-  rclcpp::Subscription<usv_interfaces::msg::ObjectList>::SharedPtr
+  rclcpp::Subscription<asv_interfaces::msg::ObstacleList>::SharedPtr
       obstacle_list_sub_;
 
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr unblock_mpc_srv_;
@@ -397,13 +401,15 @@ private:
   std::vector<double> mpc_weights{0.05,  5.0,   100.0, 0.01, 0.1,
                                   100.0, 0.001, 100.0, 0.0};
   std::vector<double> tracking_to_avoid{2.0, 0.004, 0.50, 0.2, 1.0,
-                                        1.0, 1.0,   0.05, 1.0};
-  std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 0.001,
-                                        0.01, 0.01, 5.0,  0.7};
-
+                                        0.1, 1.0,   0.05, 1.0};
+  // std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 0.001,
+  //                                       0.01, 0.01, 5.0,  0.7};
+  std::vector<double> avoidance_weights{0.1,  0.02,  50.0, 0.002, 0.1,
+                                        10.0, 0.001, 5.0,  0.0};
+  //
   // map input [min,max] to output [min,max]
   double min_ae{0.1}, max_ae{0.80}, min_ce{0.05}, max_ce{0.2},
-      min_avoidance{4.0}, max_avoidance{2.0};
+      min_avoidance{100.0}, max_avoidance{40.0};
   double tracking_weights_dynamics[N_WP]{
       0.1, 10.0, 5.0,           // along,cross,heading
       0.1, 0.1,  0.1, 0.1, 0.5, // input,slack,surge,yaw,terminal

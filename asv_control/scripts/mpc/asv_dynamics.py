@@ -89,15 +89,14 @@ def export_asv_model() -> ASVAcadosModel:
     x = vertcat(x_pos, y_pos, psi, surge, sway, yaw, t, *obs_states)
 
     # =========================================================================
-    # Controls: normalized [Tx, Ty, Tz] in [-1, 1], plus spline dt and slack
+    # Controls: normalized [Tx, Ty, Tz] in [-1, 1], plus spline dt
     # =========================================================================
     u_Tx = SX.sym("u_Tx")
     u_Ty = SX.sym("u_Ty")
     u_Tz = SX.sym("u_Tz")
     dt_ctrl = SX.sym("dt")
-    slack_u = SX.sym("slack_u")
 
-    u_ctrl = vertcat(u_Tx, u_Ty, u_Tz, dt_ctrl, slack_u)
+    u_ctrl = vertcat(u_Tx, u_Ty, u_Tz, dt_ctrl)
 
     # =========================================================================
     # Parameters
@@ -123,8 +122,8 @@ def export_asv_model() -> ASVAcadosModel:
     w_cross = SX.sym("w_cross")
     w_heading = SX.sym("w_heading")
     w_input = SX.sym("w_input")
-    w_slack = SX.sym("w_slack")
     w_surge = SX.sym("w_surge")
+    w_sway = SX.sym("w_sway")
     w_yaw = SX.sym("w_yaw")
     w_terminal = SX.sym("w_terminal")
     w_avoidance = SX.sym("w_avoidance")
@@ -159,8 +158,8 @@ def export_asv_model() -> ASVAcadosModel:
         w_cross,
         w_heading,
         w_input,
-        w_slack,
         w_surge,
+        w_sway,
         w_yaw,
         w_terminal,
         w_avoidance,
@@ -214,7 +213,6 @@ def export_asv_model() -> ASVAcadosModel:
 
     # =========================================================================
     # Thrust: normalized controls → physical forces
-    # tau = [Tx, 0, Tz] — no direct sway force
     # =========================================================================
     tau_thrust = vertcat(u_Tx * Tx_max, u_Ty * Ty_max, u_Tz * Tz_max)
 
@@ -342,7 +340,7 @@ def export_asv_model() -> ASVAcadosModel:
         "$r$ [rad/s]",
         "$t$",
     ]
-    model.u_labels = ["$u_{Tx}$", "$u_{Ty}$", "$u_{Tz}$", "$\\dot{t}$", "$\\sigma_u$"]
+    model.u_labels = ["$u_{Tx}$", "$u_{Ty}$", "$u_{Tz}$", "$\\dot{t}$"]
     model.t_label = "$t$ [s]"
 
     model.Tx_max = Tx_max

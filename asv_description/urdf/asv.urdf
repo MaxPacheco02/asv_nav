@@ -7,7 +7,7 @@
       <!-- <origin rpy="0 0 0" xyz="0 0 0.15"/> -->
       <origin rpy="1.5708 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://asv_description/urdf/ferry_shape.STL" scale="1 1 1"/>
+        <mesh filename="package://asv_description/urdf/ferry_shape.STL" scale="1 0.1 0.167"/>
       </geometry>
     </visual>
   </link>

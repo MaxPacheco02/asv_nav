@@ -37,7 +37,7 @@ class MPCWeightsTuner(QMainWindow):
             ("w_sway", 100.0, 0.0, 1000.0, 0.001),
             ("w_yaw", 0.001, 0.0, 10.0, 0.001),
             ("terminal_w", 100.0, 0.0, 10000.0, 1.0),
-            ("avoidance_w", 0.0, 0.0, 10.0, 0.01),
+            ("avoidance_w", 0.0, 0.0, 1000.0, 0.01),
             # ("avoidance_w", 0.7, 0.0, 10.0, 0.01),
         ]
 

@@ -12,6 +12,19 @@ import casadi as ca
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
+R_SAFE = 50.0
+AVO_POWER = 6.0
+D_CLAMP = 1.0
+AVOIDANCE_LIST = [
+    [61.0, 0.0],
+    [40.0, 10.0],
+    [40.0, -10.0],
+    [0.0, 10.0],
+    [0.0, -10.0],
+    [-60.0, 10.0],
+    [-60.0, -10.0],
+]
+
 
 def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp = AcadosOcp()
@@ -19,6 +32,7 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     model = export_asv_model()
     ocp.model = model
 
+    # --- Weight parameters (runtime-tunable) ---
     w_along = model.p[16]
     w_cross = model.p[17]
     w_heading = model.p[18]
@@ -32,10 +46,13 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.solver_options.N_horizon = N_horizon
     ocp.solver_options.tf = Tf
 
-    ocp.cost.cost_type = "EXTERNAL"
-    ocp.cost.cost_type_e = "EXTERNAL"
+    # === NONLINEAR_LS: cost = (y - yref)^T W (y - yref) ===
+    # We embed sqrt(weight) into each residual and use W = I, yref = 0
+    # so that cost = sum_i  w_i * r_i^2  with runtime-tunable w_i.
+    ocp.cost.cost_type = "NONLINEAR_LS"
+    ocp.cost.cost_type_e = "NONLINEAR_LS"
 
-    # States: [x, y, psi, surge, sway, yaw, t, obs...]
+    # States
     x_pos = model.x[0]
     y_pos = model.x[1]
     psi = model.x[2]
@@ -54,93 +71,128 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     last_s_param = model.p[26]
     spline_ceil_param = model.p[27]
 
-    # Controls: [u_Tx, u_Ty, u_Tz, dt, slack_u] — normalized [-1,1]
+    # Controls
     u_Tx = model.u[0]
     u_Ty = model.u[1]
     u_Tz = model.u[2]
     dt = model.u[3]
-    slack_u = model.u[4]
 
-    # Spline evaluation
+    # --- Spline evaluation (with spline switching) ---
     condition_t = ca.logic_and(t_param > spline_ceil_param, last_s_param == 0)
     condition_t_la = ca.logic_and(t_la_param > spline_ceil_param, last_s_param == 0)
     s_x = ca.if_else(condition_t, model.s2_x, model.s_x)
     s_y = ca.if_else(condition_t, model.s2_y, model.s_y)
     psi_ref = ca.if_else(condition_t, model.psi2_ref, model.psi_ref)
-    s_x_dot = ca.if_else(condition_t, model.s2_x_dot, model.s_x_dot)
-    s_y_dot = ca.if_else(condition_t, model.s2_y_dot, model.s_y_dot)
 
     s_la_x = ca.if_else(condition_t_la, model.s2_la_x, model.s_la_x)
     s_la_y = ca.if_else(condition_t_la, model.s2_la_y, model.s_la_y)
 
-    # --- COST ---
-    crosstrack_error = (x_pos - s_x) ** 2 + (y_pos - s_y) ** 2
-    alongtrack_error = (x_pos - s_la_x) ** 2 + (y_pos - s_la_y) ** 2
-    heading_error = sin((psi - psi_ref) / 2) ** 2
+    # =========================================================================
+    # STAGE RESIDUALS
+    # Each residual r_i is scaled by sqrt(w_i) so that r_i^2 = w_i * error_i
+    # =========================================================================
+    stage_residuals = vertcat(
+        # Crosstrack (2 residuals: x and y components)
+        ca.sqrt(w_cross) * (x_pos - s_x),
+        ca.sqrt(w_cross) * (y_pos - s_y),
+        # Alongtrack (2 residuals)
+        ca.sqrt(w_along) * (x_pos - s_la_x),
+        ca.sqrt(w_along) * (y_pos - s_la_y),
+        # Heading (1 residual)
+        ca.sqrt(w_heading) * sin((psi - psi_ref) / 2),
+        # Input (3 residuals — already normalized)
+        ca.sqrt(w_input) * u_Tx,
+        ca.sqrt(w_input) * u_Ty,
+        ca.sqrt(w_input) * u_Tz,
+        # State penalties
+        ca.sqrt(w_surge) * surge,
+        ca.sqrt(w_sway) * sway,
+        ca.sqrt(w_yaw) * yaw,
+    )
 
-    # Input cost: already normalized, so u_Tx² + u_Ty² + u_Tz² ∈ [0, 3]
-    input_cost = u_Tx**2 + u_Ty**2 + u_Tz**2 + dt**2
-    surge_cost = surge**2
-    sway_cost = sway**2
-    yaw_cost = yaw**2
+    # --- Avoidance residuals ---
+    # r = 1 / max(d/3, eps)^0.75   so   r^2 = 1 / d^1.5  (barrier shape)
+    # GN gives H ≈ J^T J which is always PSD — no eigenvalue projection!
+    # avoidance_list = [
+    # [61.0, 0.0],
+    # [40.0, 10.0],
+    # [40.0, -10.0],
+    # [-60.0, 10.0],
+    # [-60.0, -10.0],
+    # ]
 
-    avoidance_list = [
-        [1.2, 0.0],
-        [0.35, 0.0],
-        [0.45, -0.25],
-        [0.45, 0.25],
-        [-0.35, -0.3],
-        [-0.35, 0.3],
-        [-0.35, 0.0],
-    ]
-    avoidance_cost = 0.0
-    for i in range(int(obs_n)):
-        for avo in avoidance_list:
+    for i in range(obs_n):
+        for avo in AVOIDANCE_LIST:
             x_virt = x_pos + avo[0] * cos(psi) - avo[1] * sin(psi)
             y_virt = y_pos + avo[0] * sin(psi) + avo[1] * cos(psi)
-            avoidance_cost += 1.0 / (
-                (
-                    np.sqrt((obs[i * 2] - x_virt) ** 2 + (obs[i * 2 + 1] - y_virt) ** 2)
-                    / 3.0
-                )
-                ** 1.5
+            d = ca.sqrt((obs[i * 2] - x_virt) ** 2 + (obs[i * 2 + 1] - y_virt) ** 2)
+            # residual r = sqrt(w) * (R/d)^(p/2)
+            # cost = r² = w * (R/d)^p
+            stage_residuals = vertcat(
+                stage_residuals,
+                ca.sqrt(w_avoidance)
+                * (R_SAFE / ca.fmax(d, D_CLAMP)) ** (AVO_POWER / 2),
             )
 
-    stage_cost = (
-        w_along * alongtrack_error
-        + w_cross * crosstrack_error
-        + w_heading * heading_error
-        + w_input * input_cost
-        + w_surge * surge_cost
-        + w_sway * sway_cost
-        + w_yaw * yaw_cost
-        + w_avoidance * avoidance_cost
-    )
-    ocp.model.cost_expr_ext_cost = stage_cost
+    n_stage = stage_residuals.shape[0]
 
-    terminal_cost = w_terminal * (
-        w_along * alongtrack_error
-        + w_cross * crosstrack_error
-        + w_heading * heading_error
-        + w_surge * surge_cost
-        + w_sway * sway_cost
-        + w_yaw * yaw_cost
-        + w_avoidance * avoidance_cost
+    # =========================================================================
+    # TERMINAL RESIDUALS (no input terms, scaled by sqrt(w_terminal))
+    # =========================================================================
+    terminal_residuals = vertcat(
+        ca.sqrt(w_terminal * w_cross) * (x_pos - s_x),
+        ca.sqrt(w_terminal * w_cross) * (y_pos - s_y),
+        ca.sqrt(w_terminal * w_along) * (x_pos - s_la_x),
+        ca.sqrt(w_terminal * w_along) * (y_pos - s_la_y),
+        ca.sqrt(w_terminal * w_heading) * sin((psi - psi_ref) / 2),
+        ca.sqrt(w_terminal * w_surge) * surge,
+        ca.sqrt(w_terminal * w_sway) * sway,
+        ca.sqrt(w_terminal * w_yaw) * yaw,
     )
-    ocp.model.cost_expr_ext_cost_e = terminal_cost
+    # Terminal avoidance
+    for i in range(obs_n):
+        for avo in AVOIDANCE_LIST:
+            x_virt = x_pos + avo[0] * cos(psi) - avo[1] * sin(psi)
+            y_virt = y_pos + avo[0] * sin(psi) + avo[1] * cos(psi)
+            d = ca.sqrt((obs[i * 2] - x_virt) ** 2 + (obs[i * 2 + 1] - y_virt) ** 2)
+            # residual r = sqrt(w) * (R/d)^(p/2)
+            # cost = r² = w * (R/d)^p
+            terminal_residuals = vertcat(
+                terminal_residuals,
+                ca.sqrt(w_avoidance)
+                * (R_SAFE / ca.fmax(d, D_CLAMP)) ** (AVO_POWER / 2),
+            )
+
+    n_terminal = terminal_residuals.shape[0]
+
+    # =========================================================================
+    # Assign to OCP
+    # =========================================================================
+    ocp.model.cost_y_expr = stage_residuals
+    ocp.model.cost_y_expr_e = terminal_residuals
+
+    # W = identity (weights are already inside the residuals)
+    ocp.cost.W = np.eye(n_stage)
+    ocp.cost.W_e = np.eye(n_terminal)
+
+    # yref = 0 (residuals are already error terms)
+    ocp.cost.yref = np.zeros(n_stage)
+    ocp.cost.yref_e = np.zeros(n_terminal)
+    ocp.cost.cost_type_0 = "NONLINEAR_LS"
+    ocp.model.cost_y_expr_0 = stage_residuals
+    ocp.cost.W_0 = np.eye(n_stage)
+    ocp.cost.yref_0 = np.zeros(n_stage)
 
     # --- CONSTRAINTS ---
     ocp.constraints.x0 = x0
 
-    # Controls: normalized [-1,1] for forces, plus dt and slack
-    dt_max = 0.01
+    # Controls: normalized [-1,1] for forces, plus dt
+    dt_max = 0.1
     dt_min = -0.001
-    slack_u_max = 1.0
-    slack_u_min = 0.0
 
-    ocp.constraints.lbu = np.array([-1.0, -1.0, -1.0, dt_min, slack_u_min])
-    ocp.constraints.ubu = np.array([1.0, 1.0, 1.0, dt_max, slack_u_max])
-    ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4])
+    ocp.constraints.lbu = np.array([-1.0, -1.0, -1.0, dt_min])
+    ocp.constraints.ubu = np.array([1.0, 1.0, 1.0, dt_max])
+    ocp.constraints.idxbu = np.array([0, 1, 2, 3])
 
     # State bounds: surge, sway, yaw
     u_min, u_max = -0.1, 6.0
@@ -151,6 +203,7 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.ubx = np.array([u_max, v_max, r_max])
     ocp.constraints.idxbx = np.array([3, 4, 5])
 
+    # Thruster magnitude constraints
     ocp.model.con_h_expr = vertcat(
         u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,  # thruster 0
         u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,  # thruster 1
@@ -163,18 +216,14 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     # --- SOLVER OPTIONS ---
     ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
     ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
-    # ocp.solver_options.integrator_type = "ERK"
-    # ocp.solver_options.sim_method_num_steps = 20  # substeps for stiff dynamics
 
     ocp.solver_options.integrator_type = "IRK"
-    ocp.solver_options.sim_method_num_stages = 4  # Standard Gauss-Legendre stages
+    ocp.solver_options.sim_method_num_stages = 4
     ocp.solver_options.sim_method_num_steps = 3
-    ocp.solver_options.sim_method_newton_iter = (
-        3  # Newton iterations for the implicit solve
-    )
+    ocp.solver_options.sim_method_newton_iter = 3
 
-    ocp.solver_options.qp_solver_iter_max = 200
-    ocp.solver_options.nlp_solver_max_iter = 50
+    ocp.solver_options.qp_solver_iter_max = 500
+    ocp.solver_options.nlp_solver_max_iter = 200
     ocp.solver_options.qp_solver_cond_N = N_horizon // 2
 
     ocp.solver_options.regularize_method = "PROJECT_REDUC_HESS"
@@ -202,7 +251,7 @@ def setup_integrator(dt, params):
     sim.model = export_asv_model()
 
     sim.solver_options.T = dt
-    sim.solver_options.num_steps = 10  # match OCP substeps
+    sim.solver_options.num_steps = 10
     sim.code_export_directory = "c_generated_code_asv_sim"
     sim.parameter_values = params
 
@@ -228,7 +277,7 @@ def get_catmull_rom_segment(p0, p1, p2, p3, alpha=1.0, tension=0.2):
     return np.array([a[0], b[0], c[0], d[0], a[1], b[1], c[1], d[1]])
 
 
-def get_triangle_verts(x, y, psi, L=20.0):
+def get_triangle_verts(x, y, psi, L=60.0):
     cos_p, sin_p = np.cos(psi), np.sin(psi)
     bow = [x + L * cos_p, y + L * sin_p]
     port = [
@@ -276,12 +325,24 @@ def compute_costs(state, spline_params, t_la_val, spline_ceil_val, in_last_s_val
     alongtrack = (x - s_la[0]) ** 2 + (y - s_la[1]) ** 2
     heading = np.sin((psi - psi_ref) / 2) ** 2
 
-    return crosstrack, alongtrack, heading
+    # Avoidance cost (matches OCP formulation)
+    obs_n = 3
+    avoidance = 0.0
+    for i in range(obs_n):
+        for avo in AVOIDANCE_LIST:
+            x_virt = x + avo[0] * np.cos(psi) - avo[1] * np.sin(psi)
+            y_virt = y + avo[0] * np.sin(psi) + avo[1] * np.cos(psi)
+            d = np.sqrt(
+                (state[7 + 2 * i] - x_virt) ** 2 + (state[8 + 2 * i] - y_virt) ** 2
+            )
+            avoidance += (R_SAFE / max(d, D_CLAMP)) ** AVO_POWER
+
+    return crosstrack, alongtrack, heading, avoidance
 
 
 def main(algorithm="RTI", simulate=True):
-    Tf = 50.0
-    N_horizon = 50
+    Tf = 200.0
+    N_horizon = 200
     dt = Tf / N_horizon
 
     # State: [x, y, psi, surge, sway, yaw, t, obs...]
@@ -294,19 +355,19 @@ def main(algorithm="RTI", simulate=True):
             0.0,  # sway
             0.0,  # yaw
             0.2,  # t
-            100.0,
-            100.0,  # obs 0 (far away)
-            100.0,
+            140.0,
+            40.50,  # obs 0
+            300.0,
             100.0,  # obs 1
-            100.0,
-            100.0,  # obs 2
+            300.0,
+            -100.0,  # obs 2
         ]
     )
 
     T_sim = 1000.0
     Nsim = int(T_sim / dt)
     nx = x0.shape[0]
-    nu = 5  # u_Tx, u_Ty, u_Tz, dt, slack_u
+    nu = 4  # u_Tx, u_Ty, u_Tz, dt
     simX = np.zeros((Nsim + 1, nx))
     simU = np.zeros((Nsim, nu))
     simX[0, :] = x0
@@ -326,17 +387,18 @@ def main(algorithm="RTI", simulate=True):
     Ty_max = 2 * 222224.5896
     Tz_max = 222224.5896 * 61.1
 
+    # Parameter order: [spline1(8), spline2(8), weights(9), additional(3), obs_vel(6)]
     w_params = np.array(
         [
-            0.001,  # w_along
-            5.0,  # w_cross
-            50.0,  # w_heading
+            0.1,  # w_along
+            0.03,  # w_cross
+            1.0,  # w_heading
             0.01,  # w_input
-            0.10,  # w_surge
-            100.0,  # w_sway
+            0.01,  # w_surge
+            0.02,  # w_sway
             0.0,  # w_yaw
-            100.0,  # w_terminal
-            0.0,  # w_avoidance
+            0.0,  # w_terminal
+            10.0,  # w_avoidance
         ]
     )
     add_params = np.array([1.0, 1.0, 1.0])
@@ -366,6 +428,14 @@ def main(algorithm="RTI", simulate=True):
             label="Spline reference",
         )
         ax_traj.plot(x0[0], x0[1], "go", markersize=10, label="Start")
+
+        # Plot obstacles
+        for i in range(3):
+            ox, oy = x0[7 + 2 * i], x0[8 + 2 * i]
+            circle = plt.Circle((ox, oy), 3.0, color="red", alpha=0.3)
+            ax_traj.add_patch(circle)
+            ax_traj.plot(ox, oy, "rx", markersize=10)
+
         ax_traj.set_xlabel("X [m]")
         ax_traj.set_ylabel("Y [m]")
         ax_traj.set_title(f"XY Trajectory ({algorithm})")
@@ -375,6 +445,9 @@ def main(algorithm="RTI", simulate=True):
 
         (line_traj,) = ax_traj.plot([], [], "r-", linewidth=1.5, label="ASV trajectory")
         (point_st,) = ax_traj.plot([], [], "b^", markersize=10, zorder=6, label="s(t)")
+        avo_scatter = ax_traj.scatter(
+            [], [], c="orange", s=20, zorder=6, label="avo points"
+        )
         asv_patch = Polygon(
             get_triangle_verts(x0[0], x0[1], x0[2]),
             closed=True,
@@ -416,11 +489,13 @@ def main(algorithm="RTI", simulate=True):
         (line_cross,) = ax_costs.plot([], [], label="crosstrack")
         (line_along,) = ax_costs.plot([], [], label="alongtrack")
         (line_head,) = ax_costs.plot([], [], label="heading")
+        (line_avoid,) = ax_costs.plot([], [], label="avoidance")
         ax_costs.legend()
 
         cost_cross = np.zeros(Nsim)
         cost_along = np.zeros(Nsim)
         cost_head = np.zeros(Nsim)
+        cost_avoid = np.zeros(Nsim)
 
         plt.tight_layout()
 
@@ -464,6 +539,17 @@ def main(algorithm="RTI", simulate=True):
             asv_patch.set_xy(
                 get_triangle_verts(simX[i + 1, 0], simX[i + 1, 1], simX[i + 1, 2])
             )
+
+            # Update avoidance points
+            px, py, ppsi = simX[i + 1, 0], simX[i + 1, 1], simX[i + 1, 2]
+            avo_pts = []
+            for avo in AVOIDANCE_LIST:
+                ax_ = px + avo[0] * np.cos(ppsi) - avo[1] * np.sin(ppsi)
+                ay_ = py + avo[0] * np.sin(ppsi) + avo[1] * np.cos(ppsi)
+                avo_pts.append([ax_, ay_])
+            avo_pts = np.array(avo_pts)
+            avo_scatter.set_offsets(avo_pts)
+
             st_pos = evaluate_spline(np.clip(simX[i + 1, 6], 0, 1), spline_params)
             point_st.set_data([st_pos[0]], [st_pos[1]])
 
@@ -475,23 +561,29 @@ def main(algorithm="RTI", simulate=True):
             ax_states.relim()
             ax_states.autoscale_view()
 
-            # Plot physical forces (denormalize)
             line_tx.set_data(time_u, simU[: i + 1, 0] * Tx_max / 1000)
             line_ty.set_data(time_u, simU[: i + 1, 1] * Ty_max / 1000)
             line_tz.set_data(time_u, simU[: i + 1, 2] * Tz_max / 1000)
             ax_controls.relim()
             ax_controls.autoscale_view()
 
-            ct, at, he = compute_costs(
-                simX[i + 1, :], spline_params, params[25], params[27], params[26]
+            ct, at, he, av = compute_costs(
+                simX[i + 1, :],
+                spline_params,
+                params[25],
+                params[27],
+                params[26],
             )
-            cost_cross[i] = ct
-            cost_along[i] = at
-            cost_head[i] = he
+
+            cost_cross[i] = w_params[1] * ct
+            cost_along[i] = w_params[0] * at
+            cost_head[i] = w_params[2] * he
+            cost_avoid[i] = w_params[8] * av
 
             line_cross.set_data(time_u, cost_cross[: i + 1])
             line_along.set_data(time_u, cost_along[: i + 1])
             line_head.set_data(time_u, cost_head[: i + 1])
+            line_avoid.set_data(time_u, cost_avoid[: i + 1])
             ax_costs.relim()
             ax_costs.autoscale_view()
 
@@ -502,17 +594,22 @@ def main(algorithm="RTI", simulate=True):
                     f"Step {i + 1}/{Nsim}: t={simX[i, 6]:.3f}, "
                     f"pos=({simX[i, 0]:.2f}, {simX[i, 1]:.2f}), "
                     f"surge={simX[i, 3]:.3f}, sway={simX[i, 4]:.3f}, "
-                    f"prep={t_preparation[i] * 1000:.2f}ms, feedback={t_feedback[i] * 1000:.2f}ms"
+                    f"prep={t_preparation[i] * 1000:.2f}ms, "
+                    f"feedback={t_feedback[i] * 1000:.2f}ms"
                 )
 
         print(f"\n=== Simulation Complete ({algorithm}) ===")
         t_preparation *= 1000
         t_feedback *= 1000
         print(
-            f"Preparation [ms]: min={np.min(t_preparation):.3f}, median={np.median(t_preparation):.3f}, max={np.max(t_preparation):.3f}"
+            f"Preparation [ms]: min={np.min(t_preparation):.3f}, "
+            f"median={np.median(t_preparation):.3f}, "
+            f"max={np.max(t_preparation):.3f}"
         )
         print(
-            f"Feedback [ms]: min={np.min(t_feedback):.3f}, median={np.median(t_feedback):.3f}, max={np.max(t_feedback):.3f}"
+            f"Feedback [ms]: min={np.min(t_feedback):.3f}, "
+            f"median={np.median(t_feedback):.3f}, "
+            f"max={np.max(t_feedback):.3f}"
         )
 
         plt.ioff()
