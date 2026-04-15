@@ -42,6 +42,8 @@ State DynamicModel::update_with_perturb(Eigen::Vector3d F,
   nu_dot = dyn.f + dyn.g * F;
   nu = integral_step * (nu_dot + nu_dot_last) / 2 + nu; // integral
   nu_dot_last = nu_dot;
+  nu(0) = std::clamp(nu(0), max_astern, max_surge);
+  nu(2) = std::clamp(nu(2), -max_yaw, max_yaw);
 
   Eigen::Matrix3d J;
   Eigen::Vector3d eta_dot;

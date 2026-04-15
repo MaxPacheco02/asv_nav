@@ -3,6 +3,7 @@ ASV Spline Tracking MPC using ACADOS
 Full 3-DOF Fossen dynamics with normalized Tx/Tz controls
 """
 
+import sys
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosSimSolver, AcadosSim
 from asv_dynamics import export_asv_model
 import numpy as np
@@ -12,18 +13,30 @@ import casadi as ca
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
-R_SAFE = 50.0
-AVO_POWER = 6.0
-D_CLAMP = 1.0
+R_SAFE = 23.3
+AVO_POWER = 4.0
+D_CLAMP = 0.001
 AVOIDANCE_LIST = [
     [61.0, 0.0],
     [40.0, 10.0],
     [40.0, -10.0],
+    [20.0, 10.0],
+    [20.0, -10.0],
     [0.0, 10.0],
     [0.0, -10.0],
+    [-20.0, 10.0],
+    [-20.0, -10.0],
+    [-40.0, 10.0],
+    [-40.0, -10.0],
     [-60.0, 10.0],
     [-60.0, -10.0],
 ]
+# Ship dimensions
+A_ELLIPSE = 70.0  # semi-major axis (longitudinal, bow to stern center)
+B_ELLIPSE = 20.0  # semi-minor axis (lateral, half-beam)
+ELLIPSE_OFFSET = 0.0  # shift center forward/aft if COG isn't midship
+
+R_SAFE_ELLIPSE = 30.0  # extra buffer added to both axes
 
 
 def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
@@ -110,35 +123,31 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
         ca.sqrt(w_yaw) * yaw,
     )
 
-    # --- Avoidance residuals ---
-    # r = 1 / max(d/3, eps)^0.75   so   r^2 = 1 / d^1.5  (barrier shape)
-    # GN gives H ≈ J^T J which is always PSD — no eigenvalue projection!
-    # avoidance_list = [
-    # [61.0, 0.0],
-    # [40.0, 10.0],
-    # [40.0, -10.0],
-    # [-60.0, 10.0],
-    # [-60.0, -10.0],
-    # ]
+    a_ell = A_ELLIPSE + R_SAFE_ELLIPSE  # effective semi-major
+    b_ell = B_ELLIPSE + R_SAFE_ELLIPSE  # effective semi-minor
 
+    # --- Soft avoidance residuals (replaces all 13-point loop) ---
     for i in range(obs_n):
-        for avo in AVOIDANCE_LIST:
-            x_virt = x_pos + avo[0] * cos(psi) - avo[1] * sin(psi)
-            y_virt = y_pos + avo[0] * sin(psi) + avo[1] * cos(psi)
-            d = ca.sqrt((obs[i * 2] - x_virt) ** 2 + (obs[i * 2 + 1] - y_virt) ** 2)
-            # residual r = sqrt(w) * (R/d)^(p/2)
-            # cost = r² = w * (R/d)^p
-            stage_residuals = vertcat(
-                stage_residuals,
-                ca.sqrt(w_avoidance)
-                * (R_SAFE / ca.fmax(d, D_CLAMP)) ** (AVO_POWER / 2),
-            )
+        # Transform obstacle into ASV body frame
+        dx = obs[i * 2] - x_pos
+        dy = obs[i * 2 + 1] - y_pos
+        ox_body = dx * cos(psi) + dy * sin(psi) - ELLIPSE_OFFSET
+        oy_body = -dx * sin(psi) + dy * cos(psi)
+
+        # Ellipse distance metric: 1 when on boundary, <1 inside, >1 outside
+        ellipse_val = (ox_body / a_ell) ** 2 + (oy_body / b_ell) ** 2
+
+        # Soft barrier: cost spikes as obstacle enters ellipse
+        # Using 1/ellipse_val^(p/2) so cost = w * (1/ellipse_val)^p
+        stage_residuals = vertcat(
+            stage_residuals,
+            ca.sqrt(w_avoidance)
+            * (1.0 / ca.fmax(ellipse_val, D_CLAMP)) ** (AVO_POWER / 2),
+        )
 
     n_stage = stage_residuals.shape[0]
 
-    # =========================================================================
-    # TERMINAL RESIDUALS (no input terms, scaled by sqrt(w_terminal))
-    # =========================================================================
+    # TERMINAL RESIDUALS
     terminal_residuals = vertcat(
         ca.sqrt(w_terminal * w_cross) * (x_pos - s_x),
         ca.sqrt(w_terminal * w_cross) * (y_pos - s_y),
@@ -149,19 +158,18 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
         ca.sqrt(w_terminal * w_sway) * sway,
         ca.sqrt(w_terminal * w_yaw) * yaw,
     )
-    # Terminal avoidance
+
     for i in range(obs_n):
-        for avo in AVOIDANCE_LIST:
-            x_virt = x_pos + avo[0] * cos(psi) - avo[1] * sin(psi)
-            y_virt = y_pos + avo[0] * sin(psi) + avo[1] * cos(psi)
-            d = ca.sqrt((obs[i * 2] - x_virt) ** 2 + (obs[i * 2 + 1] - y_virt) ** 2)
-            # residual r = sqrt(w) * (R/d)^(p/2)
-            # cost = r² = w * (R/d)^p
-            terminal_residuals = vertcat(
-                terminal_residuals,
-                ca.sqrt(w_avoidance)
-                * (R_SAFE / ca.fmax(d, D_CLAMP)) ** (AVO_POWER / 2),
-            )
+        dx = obs[i * 2] - x_pos
+        dy = obs[i * 2 + 1] - y_pos
+        ox_body = dx * cos(psi) + dy * sin(psi) - ELLIPSE_OFFSET
+        oy_body = -dx * sin(psi) + dy * cos(psi)
+        ellipse_val = (ox_body / a_ell) ** 2 + (oy_body / b_ell) ** 2
+        terminal_residuals = vertcat(
+            terminal_residuals,
+            ca.sqrt(w_avoidance)
+            * (1.0 / ca.fmax(ellipse_val, D_CLAMP)) ** (AVO_POWER / 2),
+        )
 
     n_terminal = terminal_residuals.shape[0]
 
@@ -187,26 +195,25 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon, algorithm="RTI"):
     ocp.constraints.x0 = x0
 
     # Controls: normalized [-1,1] for forces, plus dt
-    dt_max = 0.1
-    dt_min = -0.001
+    dt_max = 1.0
+    dt_min = -0.01
 
     ocp.constraints.lbu = np.array([-1.0, -1.0, -1.0, dt_min])
     ocp.constraints.ubu = np.array([1.0, 1.0, 1.0, dt_max])
     ocp.constraints.idxbu = np.array([0, 1, 2, 3])
 
     # State bounds: surge, sway, yaw
-    u_min, u_max = -0.1, 6.0
-    v_min, v_max = -1.0, 1.0
-    r_min, r_max = -0.1, 0.1
+    u_min, u_max = -6.945, 5.9678
+    v_min, v_max = -0.32, 0.32
+    r_min, r_max = -0.00899, 0.00899
 
     ocp.constraints.lbx = np.array([u_min, v_min, r_min])
     ocp.constraints.ubx = np.array([u_max, v_max, r_max])
     ocp.constraints.idxbx = np.array([3, 4, 5])
 
-    # Thruster magnitude constraints
     ocp.model.con_h_expr = vertcat(
-        u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,  # thruster 0
-        u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,  # thruster 1
+        u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,
+        u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,
     )
     ocp.constraints.lh = np.array([0.0, 0.0])
     ocp.constraints.uh = np.array([1.0, 1.0])
@@ -341,9 +348,10 @@ def compute_costs(state, spline_params, t_la_val, spline_ceil_val, in_last_s_val
 
 
 def main(algorithm="RTI", simulate=True):
-    Tf = 200.0
-    N_horizon = 200
+    Tf = 100.0
+    N_horizon = 25
     dt = Tf / N_horizon
+    obs_n = 3
 
     # State: [x, y, psi, surge, sway, yaw, t, obs...]
     x0 = np.array(
@@ -355,11 +363,11 @@ def main(algorithm="RTI", simulate=True):
             0.0,  # sway
             0.0,  # yaw
             0.2,  # t
-            140.0,
-            40.50,  # obs 0
-            300.0,
-            100.0,  # obs 1
-            300.0,
+            100.0,
+            40.0,  # obs 0
+            900.0,
+            500.0,  # obs 1
+            200.0,
             -100.0,  # obs 2
         ]
     )
@@ -390,19 +398,20 @@ def main(algorithm="RTI", simulate=True):
     # Parameter order: [spline1(8), spline2(8), weights(9), additional(3), obs_vel(6)]
     w_params = np.array(
         [
-            0.1,  # w_along
-            0.03,  # w_cross
-            1.0,  # w_heading
-            0.01,  # w_input
-            0.01,  # w_surge
-            0.02,  # w_sway
-            0.0,  # w_yaw
-            0.0,  # w_terminal
-            10.0,  # w_avoidance
+            0.5,  # w_along
+            10.0,  # w_cross
+            100.0,  # w_heading
+            0.001,  # w_input
+            0.001,  # w_surge
+            0.1,  # w_sway
+            0.001,  # w_yaw
+            1.0,  # w_terminal
+            5000.0,  # w_avoidance
         ]
     )
     add_params = np.array([1.0, 1.0, 1.0])
-    ov_params = np.zeros(6)
+    ov_params = np.array([2.5, 1.0, -9.0, -5, -2.0, 4.0])
+    # ov_params = np.array([0, 0, 0, 0, 0, 0])
 
     params = np.concatenate(
         (spline_params, spline_params, w_params, add_params, ov_params)
@@ -427,13 +436,22 @@ def main(algorithm="RTI", simulate=True):
             linewidth=2,
             label="Spline reference",
         )
+        margin = 50.0
+        ax_traj.set_xlim(
+            spline_points[:, 0].min() - margin, spline_points[:, 0].max() + margin
+        )
+        ax_traj.set_ylim(
+            spline_points[:, 1].min() - margin, spline_points[:, 1].max() + margin
+        )
         ax_traj.plot(x0[0], x0[1], "go", markersize=10, label="Start")
 
         # Plot obstacles
+        obs_circles = []
         for i in range(3):
             ox, oy = x0[7 + 2 * i], x0[8 + 2 * i]
             circle = plt.Circle((ox, oy), 3.0, color="red", alpha=0.3)
             ax_traj.add_patch(circle)
+            obs_circles.append(circle)
             ax_traj.plot(ox, oy, "rx", markersize=10)
 
         ax_traj.set_xlabel("X [m]")
@@ -441,7 +459,7 @@ def main(algorithm="RTI", simulate=True):
         ax_traj.set_title(f"XY Trajectory ({algorithm})")
         ax_traj.legend()
         ax_traj.grid(True)
-        ax_traj.axis("equal")
+        ax_traj.set_aspect("equal", adjustable="datalim")
 
         (line_traj,) = ax_traj.plot([], [], "r-", linewidth=1.5, label="ASV trajectory")
         (point_st,) = ax_traj.plot([], [], "b^", markersize=10, zorder=6, label="s(t)")
@@ -525,20 +543,71 @@ def main(algorithm="RTI", simulate=True):
                 status = ocp_solver.solve()
                 t_feedback[i] = ocp_solver.get_stats("time_tot")
 
-            if status not in [0, 2, 5]:
-                print(f"Warning: Solver returned status {status} at step {i}")
+            if status not in [0, 2]:
+                print(f"\n=== SOLVER FAILURE at step {i} ===")
+                print(f"  Status: {status}")
+
+                # 1. Check which constraints are violated in the current prediction
+                for j in range(N_horizon + 1):
+                    x_node = ocp_solver.get(j, "x")
+                    px, py, ppsi = x_node[0], x_node[1], x_node[2]
+
+                    for k in range(obs_n):
+                        ox, oy = x_node[7 + 2 * k], x_node[8 + 2 * k]
+
+                        for avo_idx, avo in enumerate(AVOIDANCE_LIST):
+                            x_virt = px + avo[0] * np.cos(ppsi) - avo[1] * np.sin(ppsi)
+                            y_virt = py + avo[0] * np.sin(ppsi) + avo[1] * np.cos(ppsi)
+                            d = np.sqrt((ox - x_virt) ** 2 + (oy - y_virt) ** 2)
+
+                            if d < R_SAFE * 1.5:  # print near-violations too
+                                print(
+                                    f"  Node {j:3d} | obs {k} | avo {avo_idx:2d} | "
+                                    f"d={d:.2f}m (R_SAFE={R_SAFE}) | "
+                                    f"ASV=({px:.1f},{py:.1f}) obs=({ox:.1f},{oy:.1f})"
+                                )
+
+                    # 2. Check h constraint residuals directly
+                    h_val = ocp_solver.get(j, "sl")  # slack on lower bound of h
+                    if np.any(h_val > 1e-3):
+                        print(f"  Node {j}: lower slack violation = {h_val}")
+
+                # 3. Print obstacle velocities to confirm they're moving fast
+                for k in range(obs_n):
+                    vx = params[28 + 2 * k]  # ov_params
+                    vy = params[29 + 2 * k]
+                    ox0, oy0 = simX[i, 7 + 2 * k], simX[i, 8 + 2 * k]
+                    print(
+                        f"  Obs {k}: pos=({ox0:.1f},{oy0:.1f}) vel=({vx:.2f},{vy:.2f}) "
+                        f"speed={np.sqrt(vx**2 + vy**2):.2f} m/s"
+                    )
+
+                # 4. Print current ASV state
+                print(
+                    f"  ASV: pos=({simX[i, 0]:.1f},{simX[i, 1]:.1f}) "
+                    f"surge={simX[i, 3]:.2f} psi={simX[i, 2]:.3f} rad"
+                )
+                print(f"  Horizon covers ~{simX[i, 3] * Tf:.0f}m ahead")
 
             simU[i, :] = ocp_solver.get(0, "u")
             simX[i + 1, :] = integrator.simulate(x=simX[i, :], u=simU[i, :], p=params)
+            simX[i + 1, 2] = (simX[i + 1, 2] + np.pi) % (2 * np.pi) - np.pi
 
             # Update plots
             time = np.arange(i + 2) * dt
             time_u = np.arange(i + 1) * dt
 
             line_traj.set_data(simX[: i + 2, 0], simX[: i + 2, 1])
+
             asv_patch.set_xy(
                 get_triangle_verts(simX[i + 1, 0], simX[i + 1, 1], simX[i + 1, 2])
             )
+            # Update obstacle positions
+            for oi in range(3):
+                obs_circles[oi].center = (
+                    simX[i + 1, 7 + 2 * oi],
+                    simX[i + 1, 8 + 2 * oi],
+                )
 
             # Update avoidance points
             px, py, ppsi = simX[i + 1, 0], simX[i + 1, 1], simX[i + 1, 2]
@@ -617,5 +686,8 @@ def main(algorithm="RTI", simulate=True):
 
 
 if __name__ == "__main__":
-    # main(algorithm="RTI", simulate=True)
-    main(algorithm="RTI", simulate=False)
+    simulate = True  # default
+    if len(sys.argv) > 1:
+        simulate = sys.argv[1].lower() not in ("false", "0", "no")
+
+    main(algorithm="RTI", simulate=simulate)

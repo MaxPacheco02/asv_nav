@@ -39,18 +39,22 @@ private:
   constexpr static double m = 4725629.25, // [Kg]
       Lpp = 137.2,                        // Length between perpendiculars [m]
       xg = 0,                             // Length from o_b to CG along x-axis
-      X_u_dot = 187765,                   // Added masses param
-      Y_v_dot = 3780505,                  // Added masses param
+      X_u_dot = -187765,                  // Added masses param
+      Y_v_dot = -3780505,                 // Added masses param
       Y_r_dot = 0,                        // Added masses param
-      N_r_dot = 1748950469,               // Added masses param
+      N_r_dot = -1748950469,              // Added masses param
       Iz = 5829430000;                    // Moment of inertia
 
   // Damping coefficients
   constexpr static double Xuu = -7057.485120, Yvv = -3890570.407734,
-                          Yrv = -380816892.435056, Yvr = -11193515.732379,
-                          Yrr = -16112020985.006985, Nvv = -138515283.493993,
-                          Nrv = -8148922936.922905, Nvr = -3491938401.993457,
+                          Yrv = 380816892.435056, Yvr = -11193515.732379,
+                          Yrr = 16112020985.006985, Nvv = 138515283.493993,
+                          Nrv = -8148922936.922905, Nvr = 3491938401.993457,
                           Nrr = -390901820542.178894;
+
+  constexpr static double max_surge = 5.9678;
+  constexpr static double max_astern = -6.945;
+  constexpr static double max_yaw = 0.00899;
 
   // Update rate
   constexpr static double integral_step = 0.01;

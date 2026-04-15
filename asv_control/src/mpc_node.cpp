@@ -49,7 +49,7 @@
 #define N_AP 3         // Additional params
 #define N_OP n_obs * 2 // Obstacle params (velocities)
 
-#define TF 50.0             // MPC prediction horizon [s]
+#define TF 60.0             // MPC prediction horizon [s]
 #define DT (TF / N_HORIZON) // Time step
 
 struct WeightParams {
@@ -156,15 +156,16 @@ public:
                 var_w_at(avoidance_weights[i], avoidance_weights_inputs[i],
                          tracking_to_avoid[i], obs_d);
 
-            // TODO: Bring back variable weights!
             // Interpolate weights
-            // ocp_params[N_SP + i] =
-            //     pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
-
-            // ocp_params[N_SP + i] =
-            //     mpc_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
-
-            ocp_params[N_SP + i] = avoidance_weights[i];
+            // if (obs_d > min_avoidance) {
+            //   ocp_params[N_SP + i] = pt_weights[i];
+            // } else {
+            //   ocp_params[N_SP + i] = avoidance_weights[i];
+            // }
+            ocp_params[N_SP + i] =
+                // pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
+                // pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
+                mpc_weights[i];
           }
         });
 
@@ -240,7 +241,7 @@ public:
       for (size_t i = 0; i < mpc_weights.size(); i++) {
         avoidance_weights[i] = mpc_weights[i] * tracking_to_avoid[i];
       }
-      mpc_weights[8] = 0.0;
+      // mpc_weights[8] = 0.0;
     };
     weights_param_handle_ = weights_param_sub_->add_parameter_callback(
         "mpc_weights", weights_param_cb);
@@ -303,8 +304,11 @@ public:
     debug_weights_pub_ =
         this->create_publisher<std_msgs::msg::Float64MultiArray>("/mpc/debug/w",
                                                                  10);
+    debug_costs_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
+        "/mpc/debug/costs", 10);
+    debug_costs_msg.data.resize(5); // cross, along, heading, obs_d, avoidance
 
-    timer_ = this->create_wall_timer(100ms, std::bind(&MPCNode::update, this));
+    timer_ = this->create_wall_timer(50ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = "world";
     sol_array_msg.header.frame_id = "world";
@@ -332,7 +336,7 @@ public:
 
     // Set initial state
     for (int i = 0; i < n_obs * 2; i++) {
-      x0[7 + i] = 100.0;
+      x0[7 + i] = -1000.0;
     }
     memcpy(simX, x0, NX * sizeof(double));
 
@@ -358,6 +362,8 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+      debug_costs_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
       left_thruster_pub_, right_thruster_pub_, debug_ce_pub_, debug_he_pub_,
       debug_residuals_pub_;
@@ -390,6 +396,7 @@ private:
   geometry_msgs::msg::PoseArray sol_array_msg;
   int sol_array_length{10};
   std_msgs::msg::Float64MultiArray debug_weights_msg;
+  std_msgs::msg::Float64MultiArray debug_costs_msg;
 
   Eigen::Vector3d nu_ref;
   Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95};
@@ -398,23 +405,27 @@ private:
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.05,  5.0,   100.0, 0.01, 0.1,
-                                  100.0, 0.001, 100.0, 0.0};
-  std::vector<double> tracking_to_avoid{2.0, 0.004, 0.50, 0.2, 1.0,
-                                        0.1, 1.0,   0.05, 1.0};
-  // std::vector<double> avoidance_weights{4.0,  0.28, 30.0, 0.01, 0.001,
-  //                                       0.01, 0.01, 5.0,  0.7};
-  std::vector<double> avoidance_weights{0.1,  0.02,  50.0, 0.002, 0.1,
-                                        10.0, 0.001, 5.0,  0.0};
-  //
+  std::vector<double> mpc_weights{0.05,  10.0,  100.0, 0.01,  0.1,
+                                  100.0, 0.001, 100.0, 5000.0};
+  std::vector<double> tracking_to_avoid{10.0, 0.01, 0.5, 50.0, 5.0,
+                                        0.1,  1.0,  2.0, 1.0};
+  std::vector<double> avoidance_weights{0.5, 0.1,   50.0,  0.5,  0.5,
+                                        1.0, 0.001, 200.0, 500.0};
+
   // map input [min,max] to output [min,max]
-  double min_ae{0.1}, max_ae{0.80}, min_ce{0.05}, max_ce{0.2},
-      min_avoidance{100.0}, max_avoidance{40.0};
-  double tracking_weights_dynamics[N_WP]{
-      0.1, 10.0, 5.0,           // along,cross,heading
-      0.1, 0.1,  0.1, 0.1, 0.5, // input,slack,surge,yaw,terminal
-      1.0                       // avoidance
-  };
+  double min_ae{0.1}, max_ae{0.80}, min_ce{5.0}, max_ce{20.0},
+      min_avoidance{150.0}, max_avoidance{100.0};
+  // double tracking_weights_dynamics[N_WP]{
+  //     0.1, 10.0, 5.0,           // along,cross,heading
+  //     0.1, 0.1,  0.1, 0.1, 0.5, // input,slack,surge,yaw,terminal
+  //     1.0                       // avoidance
+  // };
+  double tracking_weights_dynamics[N_WP]{1.0, 1.0, 1.0, 1.0, 1.0,
+                                         1.0, 1.0, 1.0, 1.0};
+
+  bool solver_initialized{false};
+  int warmup_count{0};
+  const int WARMUP_ITERS{5};
 
   WeightParams tracking_weights_inputs[N_WP]{
       // These first weights depend on separation (cross_err)
@@ -452,7 +463,7 @@ private:
   double sol_idx_dynamics = 3.0;
   WeightParams sol_idx_weight_params{0.1, 0.8};
 
-  double mpc_tf{3.5}, mpc_s_max_dt{0.1}, s_length{0.001}, s_t{0.};
+  double mpc_tf{TF}, mpc_s_max_dt{0.1}, s_length{0.001}, s_t{0.};
   bool mpc_enabled{false};
   bool mpc_broken{false};
   Eigen::Vector3d asv_breakdown;
@@ -501,22 +512,31 @@ private:
     ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, 0,
                                   "ubx", simX);
 
-    // === RTI PHASE 1: PREPARATION ===
-    int rti_phase = 1;
-    ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
-                            &rti_phase);
-    status = asv_dynamics_acados_solve(ocp_capsule);
+    if (warmup_count < WARMUP_ITERS) {
+      // Full SQP solve to build a good initial trajectory
+      // (matches Python's rti_phase=0 for first 5 steps)
+      int rti_phase = 0;
+      ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
+                              &rti_phase);
+      status = asv_dynamics_acados_solve(ocp_capsule);
+      warmup_count++;
+    } else {
+      // Normal RTI: preparation then feedback
+      int rti_phase = 1;
+      ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
+                              &rti_phase);
+      status = asv_dynamics_acados_solve(ocp_capsule);
 
-    if (status != 0 && status != 2 && status != 5) {
-      RCLCPP_WARN(this->get_logger(),
-                  "Warning: Preparation phase returned status %d\n", status);
+      if (status != 0 && status != 2 && status != 5) {
+        RCLCPP_WARN(this->get_logger(), "Preparation phase returned status %d",
+                    status);
+      }
+
+      rti_phase = 2;
+      ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
+                              &rti_phase);
+      status = asv_dynamics_acados_solve(ocp_capsule);
     }
-
-    // === RTI PHASE 2: FEEDBACK ===
-    rti_phase = 2;
-    ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
-                            &rti_phase);
-    status = asv_dynamics_acados_solve(ocp_capsule);
 
     // Get optimal control
     ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, 0, "u", simU);
@@ -550,19 +570,20 @@ private:
 
     // Find solution index at fixed distance from ASV
     int sol_idx = 1;
-    double best_dist = std::numeric_limits<double>::max();
+    // double best_dist = std::numeric_limits<double>::max();
+    //
+    // for (int i = 1; i <= N_HORIZON; i++) {
+    //   double dx = xtraj[i * NX + 0] - x0[0];
+    //   double dy = xtraj[i * NX + 1] - x0[1];
+    //   double d = std::sqrt(dx * dx + dy * dy);
+    //   double err = std::fabs(d - mpc_lookahead_dist);
+    //   if (err < best_dist) {
+    //     best_dist = err;
+    //     sol_idx = i;
+    //   }
+    // }
 
-    for (int i = 1; i <= N_HORIZON; i++) {
-      double dx = xtraj[i * NX + 0] - x0[0];
-      double dy = xtraj[i * NX + 1] - x0[1];
-      double d = std::sqrt(dx * dx + dy * dy);
-      double err = std::fabs(d - mpc_lookahead_dist);
-      if (err < best_dist) {
-        best_dist = err;
-        sol_idx = i;
-      }
-    }
-
+    sol_idx = 1;
     filter_sol(Eigen::Vector3d{xtraj[sol_idx * NX + 3], xtraj[sol_idx * NX + 4],
                                xtraj[sol_idx * NX + 5]});
     ref_msg.x = xtraj[sol_idx * NX + 0];
@@ -577,6 +598,49 @@ private:
     for (int i = 0; i < N_WP; i++) {
       debug_weights_msg.data[i] = ocp_params[N_SP + i];
     }
+
+    // === DEBUG: Evaluate weighted cost components at first predicted step ===
+    {
+      double px = xtraj[1 * NX + 0];
+      double py = xtraj[1 * NX + 1];
+      double ppsi = xtraj[1 * NX + 2];
+      double psurge = xtraj[1 * NX + 3];
+      double psway = xtraj[1 * NX + 4];
+      double pyaw = xtraj[1 * NX + 5];
+
+      // Spline at current t
+      double st = fmod(x0[6], 1.0);
+      Eigen::Vector2d sp = get_spline(st);
+      Eigen::Vector2d sp_dot = get_spline_dot(st);
+      double psi_ref = std::atan2(sp_dot.y(), sp_dot.x());
+
+      double w_cross = ocp_params[N_SP + 1];
+      double w_along = ocp_params[N_SP + 0];
+      double w_heading = ocp_params[N_SP + 2];
+      double w_avoidance = ocp_params[N_SP + 8];
+
+      double crosstrack = w_cross * ((px - sp.x()) * (px - sp.x()) +
+                                     (py - sp.y()) * (py - sp.y()));
+      double heading_e = std::sin((ppsi - psi_ref) / 2.0);
+      double heading = w_heading * heading_e * heading_e;
+
+      // Nearest obstacle distance from predicted position
+      double min_obs_d = 1e9;
+      for (int i = 0; i < n_obs; i++) {
+        double dx = x0[7 + i * 2] - px;
+        double dy = x0[8 + i * 2] - py;
+        double d = std::sqrt(dx * dx + dy * dy);
+        if (d < min_obs_d)
+          min_obs_d = d;
+      }
+
+      debug_costs_msg.data[0] = crosstrack;
+      debug_costs_msg.data[1] = heading;
+      debug_costs_msg.data[2] = min_obs_d;
+      debug_costs_msg.data[3] = w_avoidance;
+      debug_costs_msg.data[4] = (double)status;
+    }
+    debug_costs_pub_->publish(debug_costs_msg);
 
     int sqp_iter;
     ocp_nlp_get(nlp_solver, "sqp_iter", &sqp_iter);
@@ -599,6 +663,15 @@ private:
       ref_msg.u = 0.0;
       ref_msg.v = 0.0;
       ref_msg.r = 0.0;
+
+      // Re-initialize all stages to current state
+      for (int i = 0; i <= N_HORIZON; i++) {
+        ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
+        double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
+        ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u", u_zero);
+      }
+      warmup_count = 0; // Force re-warmup
+
     } else {
       mpc_broken = false;
     }
@@ -692,15 +765,11 @@ private:
     Eigen::Vector2d out, tmp;
     for (int i = 0; i < n_obs; i++) {
       tmp << x0[7 + i * 2], x0[8 + i * 2];
-      // RCLCPP_INFO(this->get_logger(), "OBS #%d: {%.2f, %.2f}", i, tmp.x(),
-      // tmp.y());
       if (distance(asv, tmp) < min_dist) {
         out = tmp;
         min_dist = distance(asv, tmp);
       }
     }
-    // RCLCPP_INFO(this->get_logger(), "NEAREST OBS: {%.2f, %.2f}", out.x(),
-    // out.y());
     return out;
   }
 

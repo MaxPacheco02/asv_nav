@@ -160,8 +160,8 @@ public:
     s_marker_msg.type = visualization_msgs::msg::Marker::SPHERE;
     s_marker_msg.action = 0;
     s_marker_msg.scale =
-        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(1.0).y(1.0).z(
-            1.0);
+        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(5.0).y(5.0).z(
+            5.0);
     s_marker_msg.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(0).g(0).b(1).a(1);
 
@@ -170,8 +170,8 @@ public:
     la_marker_msg.type = visualization_msgs::msg::Marker::SPHERE;
     la_marker_msg.action = 0;
     la_marker_msg.scale =
-        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(1.0).y(1.0).z(
-            1.0);
+        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(5.0).y(5.0).z(
+            5.0);
     la_marker_msg.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(1).g(0).b(0).a(1);
 

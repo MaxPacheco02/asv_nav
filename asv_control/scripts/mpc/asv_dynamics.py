@@ -36,20 +36,20 @@ def export_asv_model() -> ASVAcadosModel:
     xg = 0.0
 
     # Added mass
-    X_u_dot = 187765.0
-    Y_v_dot = 3780505.0
+    X_u_dot = -187765.0
+    Y_v_dot = -3780505.0
     Y_r_dot = 0.0
-    N_r_dot = 1748950469.0
+    N_r_dot = -1748950469.0
 
     # Nonlinear damping
     Xuu = -7057.485120
     Yvv = -3890570.407734
-    Yrv = -380816892.435056
+    Yrv = 380816892.435056
     Yvr = -11193515.732379
-    Yrr = -16112020985.006985
-    Nvv = -138515283.493993
+    Yrr = 16112020985.006985
+    Nvv = 138515283.493993
     Nrv = -8148922936.922905
-    Nvr = -3491938401.993457
+    Nvr = 3491938401.993457
     Nrr = -390901820542.178894
 
     # Thruster limits for normalization
