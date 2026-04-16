@@ -7,8 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /State odom1/Shape1
-        - /Obs. markers1
-        - /Obs. on_watch1
       Splitter Ratio: 0.5
     Tree Height: 712
   - Class: rviz_common/Selection
@@ -83,7 +81,7 @@ Visualization Manager:
       Enabled: true
       Name: Spline t [0,1]
       Namespaces:
-        {}
+        "": true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -124,7 +122,7 @@ Visualization Manager:
       Enabled: true
       Name: Spline l.a. [0,1]
       Namespaces:
-        {}
+        "": true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -168,7 +166,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz_default_plugins/Path
       Color: 255; 163; 72
-      Enabled: true
+      Enabled: false
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -191,7 +189,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /asv/pose_path
-      Value: true
+      Value: false
     - Angle Tolerance: 0.0010000000474974513
       Class: rviz_default_plugins/Odometry
       Covariance:
@@ -338,6 +336,62 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /aitsmc/ref
       Value: true
+    - Alpha: 0.5
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mpc/min_avo_path
+      Value: true
+    - Alpha: 0.5
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 0; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mpc/max_avo_path
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -386,11 +440,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 0.552901566028595
-      Target Frame: world
+      Scale: 1.0137847661972046
+      Target Frame: asv
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 834.260009765625
-      Y: 15.972615242004395
+      X: 111.4094009399414
+      Y: 38.690101623535156
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 10

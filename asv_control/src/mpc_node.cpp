@@ -35,6 +35,7 @@
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_srvs/srv/empty.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
 #define NX ASV_DYNAMICS_NX
 #define NU ASV_DYNAMICS_NU
@@ -69,6 +70,11 @@ public:
 
     this->declare_parameter("mpc_s_max_dt", mpc_s_max_dt);
     mpc_s_max_dt = this->get_parameter("mpc_s_max_dt").as_double();
+
+    this->declare_parameter("min_avoidance", min_avoidance);
+    min_avoidance = this->get_parameter("min_avoidance").as_double();
+    this->declare_parameter("max_avoidance", max_avoidance);
+    max_avoidance = this->get_parameter("max_avoidance").as_double();
 
     this->declare_parameter("mpc_weights", mpc_weights);
     mpc_weights = this->get_parameter("mpc_weights").as_double_array();
@@ -112,6 +118,25 @@ public:
           x0[3] = msg->twist.twist.linear.x;
           x0[4] = msg->twist.twist.linear.y;
           x0[5] = msg->twist.twist.angular.z;
+
+          // Draw min/max avoidance radius circles around ASV
+          int n_points = min_avo_path_msg.poses.size(); // already resized to 20
+          for (int i = 0; i < n_points; i++) {
+            double angle = 2.0 * M_PI * i / (n_points - 1);
+            geometry_msgs::msg::PoseStamped p;
+            p.header.frame_id = "world";
+
+            p.pose.position.x = x0[0] + min_avoidance * std::cos(angle);
+            p.pose.position.y = x0[1] + min_avoidance * std::sin(angle);
+            min_avo_path_msg.poses[i] = p;
+
+            p.pose.position.x = x0[0] + max_avoidance * std::cos(angle);
+            p.pose.position.y = x0[1] + max_avoidance * std::sin(angle);
+            max_avo_path_msg.poses[i] = p;
+          }
+
+          min_avo_path_pub_->publish(min_avo_path_msg);
+          max_avo_path_pub_->publish(max_avo_path_msg);
         });
 
     spline_t_la_sub_ = this->create_subscription<std_msgs::msg::Float64>(
@@ -119,12 +144,19 @@ public:
           ocp_params[N_SP + N_WP] = msg.data;
         });
 
+    la_marker_sub_ = this->create_subscription<visualization_msgs::msg::Marker>(
+        "/lookahead_marker", 10,
+        [this](const visualization_msgs::msg::Marker &msg) {
+          Eigen::Vector2d la_pos;
+          la_pos << msg.pose.position.x, msg.pose.position.y;
+          along_e = distance(la_pos, asv);
+        });
+
     spline_t_sub_ = this->create_subscription<std_msgs::msg::Float64>(
         "/mpc/spline_t", 10, [this](const std_msgs::msg::Float64 &msg) {
           s_t = fmod(msg.data, 1.0);
           x0[6] = msg.data;
           ocp_params[N_SP + N_WP + 2] = ceil(msg.data);
-          along_e = (1 - s_t) * s_length;
           cross_e = get_crosstrack_e();
 
           // if (s_t <= 0.05 || s_t >= 0.95)
@@ -164,8 +196,7 @@ public:
             // }
             ocp_params[N_SP + i] =
                 // pt_weights[i] * alpha + avo_weights[i] * (1 - alpha);
-                // pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
-                mpc_weights[i];
+                pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
           }
         });
 
@@ -241,7 +272,7 @@ public:
       for (size_t i = 0; i < mpc_weights.size(); i++) {
         avoidance_weights[i] = mpc_weights[i] * tracking_to_avoid[i];
       }
-      // mpc_weights[8] = 0.0;
+      mpc_weights[8] = 0.0;
     };
     weights_param_handle_ = weights_param_sub_->add_parameter_callback(
         "mpc_weights", weights_param_cb);
@@ -284,6 +315,10 @@ public:
 
     sol_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/sol_path", 10);
+    min_avo_path_pub_ =
+        this->create_publisher<nav_msgs::msg::Path>("/mpc/min_avo_path", 10);
+    max_avo_path_pub_ =
+        this->create_publisher<nav_msgs::msg::Path>("/mpc/max_avo_path", 10);
 
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
@@ -295,6 +330,8 @@ public:
         "/asv/right_thruster", 10);
     left_thruster_pub_ = this->create_publisher<std_msgs::msg::Float64>(
         "/asv/left_thruster", 10);
+    debug_ae_pub_ =
+        this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/a_e", 10);
     debug_ce_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/c_e", 10);
     debug_he_pub_ =
@@ -311,8 +348,13 @@ public:
     timer_ = this->create_wall_timer(50ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = "world";
+    min_avo_path_msg.header.frame_id = "world";
+    max_avo_path_msg.header.frame_id = "world";
     sol_array_msg.header.frame_id = "world";
+
     sol_path_msg.poses.resize(N_HORIZON + 1);
+    min_avo_path_msg.poses.resize(10);
+    max_avo_path_msg.poses.resize(10);
     sol_array_msg.poses.resize(sol_array_length);
 
     // === CREATE OCP SOLVER ===
@@ -359,14 +401,15 @@ public:
   }
 
 private:
-  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
+      max_avo_path_pub_, min_avo_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_costs_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
-      left_thruster_pub_, right_thruster_pub_, debug_ce_pub_, debug_he_pub_,
-      debug_residuals_pub_;
+      left_thruster_pub_, right_thruster_pub_, debug_ae_pub_, debug_ce_pub_,
+      debug_he_pub_, debug_residuals_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_weights_pub_;
 
@@ -375,6 +418,9 @@ private:
       spline_params_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr spline_t_sub_,
       spline_t_la_sub_, spline_length_sub_;
+  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr
+      la_marker_sub_;
+
   rclcpp::Subscription<asv_interfaces::msg::ObstacleList>::SharedPtr
       obstacle_list_sub_;
 
@@ -391,8 +437,8 @@ private:
 
   asv_interfaces::msg::Ref ref_msg;
   std_msgs::msg::Float64 sol_time_msg, left_thruster_msg, right_thruster_msg,
-      debug_ce_msg, debug_he_msg, debug_residuals_msg;
-  nav_msgs::msg::Path sol_path_msg;
+      debug_ae_msg, debug_ce_msg, debug_he_msg, debug_residuals_msg;
+  nav_msgs::msg::Path sol_path_msg, min_avo_path_msg, max_avo_path_msg;
   geometry_msgs::msg::PoseArray sol_array_msg;
   int sol_array_length{10};
   std_msgs::msg::Float64MultiArray debug_weights_msg;
@@ -401,27 +447,27 @@ private:
   Eigen::Vector3d nu_ref;
   Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95};
 
-  double along_e, cross_e, obs_d{std::numeric_limits<double>::max()};
+  double along_e{0}, cross_e, obs_d{std::numeric_limits<double>::max()};
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.05,  10.0,  100.0, 0.01,  0.1,
-                                  100.0, 0.001, 100.0, 5000.0};
-  std::vector<double> tracking_to_avoid{10.0, 0.01, 0.5, 50.0, 5.0,
-                                        0.1,  1.0,  2.0, 1.0};
-  std::vector<double> avoidance_weights{0.5, 0.1,   50.0,  0.5,  0.5,
-                                        1.0, 0.001, 200.0, 500.0};
+  std::vector<double> mpc_weights{0.01,  10.0,  100.0,  0.01, 0.1,
+                                  100.0, 0.001, 1000.0, 0.0};
+  std::vector<double> tracking_to_avoid{10.0, 0.01, 100.0, 1.0, 1.0,
+                                        1.0,  1.0,  1.0,   1.0};
+  std::vector<double> avoidance_weights{0.5,   0.1,   100.0,  0.01,   0.1,
+                                        100.0, 0.001, 1000.0, 10000.0};
 
   // map input [min,max] to output [min,max]
-  double min_ae{0.1}, max_ae{0.80}, min_ce{5.0}, max_ce{20.0},
-      min_avoidance{150.0}, max_avoidance{100.0};
+  double min_ae{200.0}, max_ae{150.0}, min_ce{10.0}, max_ce{60.0},
+      min_avoidance{450.0}, max_avoidance{400.0};
   // double tracking_weights_dynamics[N_WP]{
   //     0.1, 10.0, 5.0,           // along,cross,heading
   //     0.1, 0.1,  0.1, 0.1, 0.5, // input,slack,surge,yaw,terminal
   //     1.0                       // avoidance
   // };
-  double tracking_weights_dynamics[N_WP]{1.0, 1.0, 1.0, 1.0, 1.0,
-                                         1.0, 1.0, 1.0, 1.0};
+  double tracking_weights_dynamics[N_WP]{2.0, 5.0, 10.0, 1.0, 10000.0,
+                                         1.0, 1.0, 10.0, 1.0};
 
   bool solver_initialized{false};
   int warmup_count{0};
@@ -545,6 +591,8 @@ private:
     sol_time_msg.data = std::chrono::duration<double>(end_t - start_t).count();
 
     sol_path_msg.header.stamp = this->get_clock()->now();
+    min_avo_path_msg.header.stamp = this->get_clock()->now();
+    max_avo_path_msg.header.stamp = this->get_clock()->now();
     sol_array_msg.header.stamp = this->get_clock()->now();
 
     geometry_msgs::msg::PoseStamped tmp_pose;
@@ -594,6 +642,7 @@ private:
     ref_msg.r = nu_ref(2);
 
     debug_ce_msg.data = get_crosstrack_e();
+    debug_ae_msg.data = along_e;
     debug_he_msg.data = get_heading_e();
     for (int i = 0; i < N_WP; i++) {
       debug_weights_msg.data[i] = ocp_params[N_SP + i];
@@ -679,6 +728,7 @@ private:
     ref_pub_->publish(ref_msg);
     // left_thruster_pub_->publish(left_thruster_msg);
     // right_thruster_pub_->publish(right_thruster_msg);
+    debug_ae_pub_->publish(debug_ae_msg);
     debug_ce_pub_->publish(debug_ce_msg);
     debug_he_pub_->publish(debug_he_msg);
     debug_residuals_pub_->publish(debug_residuals_msg);

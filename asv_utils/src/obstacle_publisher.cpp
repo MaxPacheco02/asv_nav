@@ -20,6 +20,10 @@
 #include "std_msgs/msg/float64.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+
 struct MarkerProps {
   int type;
   double x, y, z, z_trans;
@@ -78,10 +82,8 @@ public:
     std::uniform_real_distribution<double> dist_vx(-max_vel, max_vel);
     std::uniform_real_distribution<double> dist_vy(-max_vel, max_vel);
 
-    large_scale = geometry_msgs::build<geometry_msgs::msg::Vector3>()
-                      .x(marker_type["marker"].x * 4)
-                      .y(marker_type["marker"].y * 4)
-                      .z(marker_type["marker"].z * 4);
+    large_scale =
+        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(50).y(50).z(50);
     for (int i = 0; i < dyn_obs_n; i++) {
       dyn_obs[i][0] = dist_x(rng);
       dyn_obs[i][1] = dist_y(rng);
@@ -99,7 +101,7 @@ public:
       dyn_obs_id[i] = obs_.obs_list.size();
       obs_.obs_list.push_back(build_obs(x, y, v_x, v_y));
       marker_arr.markers.push_back(
-          build_marker(marker_arr.markers.size(), x, y));
+          build_marker(marker_arr.markers.size(), x, y, std::atan2(v_y, v_x)));
     }
   }
 
@@ -127,7 +129,7 @@ private:
   std::string type = "marker";
   std::string uuid = "";
 
-  double max_vel{8.0};
+  double max_vel{20.0};
   static const int dyn_obs_n{3};
   double area[4]{-50, 1500, -400, 400};
   double dyn_obs[dyn_obs_n][4]{
@@ -143,7 +145,7 @@ private:
   std::map<std::string, MarkerProps> marker_type = {
       {"round", MarkerProps{2, 0.5, 0.5, 0.5, 0}},
       {"boat", MarkerProps{2, 1.0, 1.0, 1.0, 0}},
-      {"marker", MarkerProps{3, 5.0, 5.0, 1.0, 0.25}},
+      {"marker", MarkerProps{0, 20.0, 5.0, 5.0, 0.25}},
       {"picture", MarkerProps{1, 0.5, 0.5, 0.5, 0.25}},
   };
 
@@ -159,11 +161,15 @@ private:
         .uuid(uuid);
   }
 
-  visualization_msgs::msg::Marker build_marker(int id, double x, double y) {
+  visualization_msgs::msg::Marker build_marker(int id, double x, double y,
+                                               double ang) {
     visualization_msgs::msg::Marker marker;
 
     int r{color_list[color][0]}, g{color_list[color][1]},
         b{color_list[color][2]}, a{color_list[color][3]};
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, ang);
 
     marker.header.frame_id = "world";
     marker.color =
@@ -178,6 +184,7 @@ private:
     marker.pose.position.x = x;
     marker.pose.position.y = y;
     marker.pose.position.z = marker_type[type].z_trans;
+    marker.pose.orientation = tf2::toMsg(q);
     return marker;
   }
 
@@ -205,6 +212,7 @@ private:
         near_marker_arr.markers[i].id = i;
         near_marker_arr.markers[i].color.a = 0.5;
         near_marker_arr.markers[i].scale = large_scale;
+        near_marker_arr.markers[i].type = 2;
       } else {
         near_obs_.obs_list.push_back(dummy_obs);
       }
@@ -240,6 +248,9 @@ private:
       obs_.obs_list[dyn_obs_id[i]].v_y = dyn_obs[i][3];
       marker_arr.markers[dyn_obs_id[i]].pose.position.x = dyn_obs[i][0];
       marker_arr.markers[dyn_obs_id[i]].pose.position.y = dyn_obs[i][1];
+      tf2::Quaternion q;
+      q.setRPY(0, 0, std::atan2(dyn_obs[i][3], dyn_obs[i][2]));
+      marker_arr.markers[dyn_obs_id[i]].pose.orientation = tf2::toMsg(q);
     }
   }
 
