@@ -1,10 +1,14 @@
 #include "asv_control/model/dynamic_model.h"
 
-DynamicModel::DynamicModel() : DynamicModel(Eigen::Vector3d{0, 0, 0}) { ; }
+DynamicModel::DynamicModel()
+    : DynamicModel(Eigen::Vector3d{0, 0, 0}, Eigen::Vector3d{0, 0, 0}) {
+  ;
+}
 
-DynamicModel::DynamicModel(const Eigen::Vector3d &pose) {
+DynamicModel::DynamicModel(const Eigen::Vector3d &pose,
+                           const Eigen::Vector3d &vel) {
   eta = pose;
-  nu = Eigen::Vector3d::Zero();
+  nu = vel;
   C = Eigen::Matrix3d::Zero();
   D = Eigen::Matrix3d::Zero();
   eta_dot_last = Eigen::Vector3d::Zero();
@@ -23,6 +27,7 @@ State DynamicModel::update(Azimuth u) {
   T << cos(u.ang0), cos(u.ang1),            //
       sin(u.ang0), sin(u.ang1),             //
       lx0 * sin(u.ang0), lx1 * sin(u.ang1); //
+
   control << u.force0, u.force1;
   F = T * control;
   return update_with_perturb(F, Eigen::Vector3d::Zero());
@@ -42,8 +47,8 @@ State DynamicModel::update_with_perturb(Eigen::Vector3d F,
   nu_dot = dyn.f + dyn.g * F;
   nu = integral_step * (nu_dot + nu_dot_last) / 2 + nu; // integral
   nu_dot_last = nu_dot;
-  nu(0) = std::clamp(nu(0), max_astern, max_surge);
-  nu(2) = std::clamp(nu(2), -max_yaw, max_yaw);
+  // nu(0) = std::clamp(nu(0), max_astern, max_surge);
+  // nu(2) = std::clamp(nu(2), -max_yaw, max_yaw);
 
   Eigen::Matrix3d J;
   Eigen::Vector3d eta_dot;

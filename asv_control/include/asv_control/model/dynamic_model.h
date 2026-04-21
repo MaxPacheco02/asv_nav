@@ -22,7 +22,7 @@ struct DecomposedDyn {
 class DynamicModel {
 public:
   DynamicModel();
-  DynamicModel(const Eigen::Vector3d &pose);
+  DynamicModel(const Eigen::Vector3d &pose, const Eigen::Vector3d &vel);
 
   State update(Azimuth u);
   State update(Eigen::Vector3d u);
@@ -46,10 +46,10 @@ private:
       Iz = 5829430000;                    // Moment of inertia
 
   // Damping coefficients
-  constexpr static double Xuu = -7057.485120, Yvv = -3890570.407734,
-                          Yrv = 380816892.435056, Yvr = -11193515.732379,
-                          Yrr = 16112020985.006985, Nvv = 138515283.493993,
-                          Nrv = -8148922936.922905, Nvr = 3491938401.993457,
+  constexpr static double Xuu = -7057.485120, Yvv = 865261.865010,
+                          Yrv = 380816892.435056, Yvr = 167496126.375937,
+                          Yrr = 16112020985.006985, Nvv = 23673577.174749,
+                          Nrv = -8148922936.922905, Nvr = -1898179771.979401,
                           Nrr = -390901820542.178894;
 
   constexpr static double max_surge = 5.9678;

@@ -36,9 +36,14 @@ set(DEPENDENCIES
 add_executable(obstacle_publisher src/obstacle_publisher.cpp)
 ament_target_dependencies(obstacle_publisher ${DEPENDENCIES})
 
-install(TARGETS obstacle_publisher DESTINATION lib/${PROJECT_NAME})
+add_executable(csv_path_publisher_node src/csv_path_publisher_node.cpp)
+ament_target_dependencies(csv_path_publisher_node rclcpp nav_msgs geometry_msgs
+                          tf2 tf2_geometry_msgs)
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(TARGETS obstacle_publisher csv_path_publisher_node
+        DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
