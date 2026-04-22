@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosSim, AcadosSimSolver
 from casadi import cos, sin, vertcat
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Ellipse
 
 from asv_dynamics import export_asv_model
 
@@ -28,12 +28,13 @@ from asv_dynamics import export_asv_model
 # Avoidance cost: w * (1 / ellipse_val)^AVO_POWER
 AVO_POWER = 2.0
 D_CLAMP = 1e-3
+OBS_N = 3
 
 # Ellipse defining ASV footprint (semi-axes, metres)
-A_ELLIPSE = 100.0  # longitudinal (bow-stern)
-B_ELLIPSE = 50.0  # lateral (beam)
+A_ELLIPSE = 65.0  # longitudinal (bow-stern)
+B_ELLIPSE = 15.0  # lateral (beam)
 ELLIPSE_OFFSET = 0.0  # shift centre fore/aft if COG isn't midship
-R_SAFE_ELLIPSE = 30.0  # extra buffer added to both axes
+R_SAFE_ELLIPSE = 20.0  # extra buffer added to both axes
 
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE
@@ -165,8 +166,8 @@ def _build_residuals(model, terminal: bool):
     ]
 
     # Avoidance — same weight at stage and terminal
-    for obs_x, obs_y in obs:
-        pieces.append(_avoidance_residual(x_pos, y_pos, psi, obs_x, obs_y, w_avoidance))
+    # for obs_x, obs_y in obs:
+    #     pieces.append(_avoidance_residual(x_pos, y_pos, psi, obs_x, obs_y, w_avoidance))
 
     return vertcat(*pieces)
 
@@ -215,12 +216,58 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     # Azimuth thruster feasibility: each thruster's (surge, lateral)
     # command must lie in the unit disk.
     u_Tx, u_Ty, u_Tz = model.u[0], model.u[1], model.u[2]
-    ocp.model.con_h_expr = vertcat(
-        u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,
-        u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,
-    )
-    ocp.constraints.lh = np.array([0.0, 0.0])
-    ocp.constraints.uh = np.array([1.0, 1.0])
+    h_expr_list = [
+        u_Tx**2 + ((u_Tz + 2 * u_Ty) / 2) ** 2,  # Thruster 1
+        u_Tx**2 + ((2 * u_Ty - u_Tz) / 2) ** 2,  # Thruster 2
+    ]
+
+    for i in range(OBS_N):
+        dx = model.x[2 * i + 7] - model.x[0]
+        dy = model.x[2 * i + 8] - model.x[1]
+        psi = model.x[2]
+        ox_body = dx * cos(psi) + dy * sin(psi) - ELLIPSE_OFFSET
+        oy_body = -dx * sin(psi) + dy * cos(psi)
+
+        # E >= 1 means outside the ellipse
+        ellipse_val = (ox_body / A_ELL_EFF) ** 2 + (oy_body / B_ELL_EFF) ** 2
+        h_expr_list.append(ellipse_val)
+
+    # 1. Stage Constraints (Thrusters + Obstacles)
+    model.con_h_expr = vertcat(*h_expr_list)
+    n_h = 2 + model.obs_n
+
+    ocp.constraints.lh = np.array([0.0, 0.0] + [1.0] * model.obs_n)
+    ocp.constraints.uh = np.array([1.0, 1.0] + [1e6] * model.obs_n)
+
+    # Soft constraint indices for stage (obstacles start at index 2)
+    ocp.constraints.idxsh = np.arange(2, n_h)
+
+    # Apply heavy L1/L2 penalties to the stage slack variables
+    L1_penalty = 1e4
+    L2_penalty = 1e5
+    TINY_PENALTY = 1e-3  # Prevents the upper-slack singularity
+
+    ocp.cost.zl = np.ones(model.obs_n) * L1_penalty
+    ocp.cost.zu = np.ones(model.obs_n) * TINY_PENALTY
+    ocp.cost.Zl = np.ones(model.obs_n) * L2_penalty
+    ocp.cost.Zu = np.ones(model.obs_n) * TINY_PENALTY
+
+    # ==========================================================
+    # 2. Terminal Constraints (Obstacles ONLY)
+    # ==========================================================
+    # Slice the list to skip the 2 thruster constraints
+    model.con_h_expr_e = vertcat(*h_expr_list[2:])
+
+    ocp.constraints.lh_e = np.array([1.0] * model.obs_n)
+    ocp.constraints.uh_e = np.array([1e6] * model.obs_n)
+
+    # Soft constraint indices for terminal (obstacles start at index 0 now)
+    ocp.constraints.idxsh_e = np.arange(0, model.obs_n)
+
+    ocp.cost.zl_e = np.ones(model.obs_n) * L1_penalty
+    ocp.cost.zu_e = np.ones(model.obs_n) * TINY_PENALTY
+    ocp.cost.Zl_e = np.ones(model.obs_n) * L2_penalty
+    ocp.cost.Zu_e = np.ones(model.obs_n) * TINY_PENALTY
 
     ocp.parameter_values = params
 
@@ -365,6 +412,14 @@ class Scenario:
     T_sim: float = 1000.0
     obs_n: int = 3
 
+    # Closed-loop control period (independent of MPC discretization).
+    # Matches the ROS mpc_node timer (50 ms = 20 Hz).
+    sim_dt: float = 0.05
+
+    # Render every Nth step. At sim_dt=0.05 (20 Hz), plot_every=5 gives a
+    # 4 Hz live plot — fast sim, watchable visualization.
+    plot_every: int = 5
+
     # Initial ASV state (x, y, psi, surge, sway, yaw, t)
     asv0: tuple = (2.0, -4.0, 0.0, 0.0, 0.0, 0.0, 0.2)
 
@@ -373,6 +428,10 @@ class Scenario:
 
     # Obstacle velocities [(vx, vy), ...]
     obs_vel: tuple = ((2.5, 1.0), (-9.0, -5.0), (-2.0, 4.0))
+
+    # Obstacle world-bounds for reflecting (matches obstacle_publisher.cpp).
+    # (x_min, x_max, y_min, y_max)
+    obs_bounds: tuple = (-50.0, 1500.0, -500.0, 500.0)
 
     # Spline control points
     spline_ctrl: tuple = (
@@ -383,18 +442,20 @@ class Scenario:
     )
 
     # Cost weights: along, cross, heading, input, surge, sway, yaw, term, avo
-    weights: tuple = (5.0, 10.0, 1000.0, 0.001, 0.001, 100.0, 0.001, 1.0, 5000.0)
+    weights: tuple = (0.5, 1.0, 10.0, 0.001, 0.001, 10.0, 0.001, 1.0, 100.0)
 
     # Aux params: t_la, in_last_s, spline_ceil
     aux: tuple = (1.0, 1.0, 1.0)
 
     @property
-    def dt(self) -> float:
+    def mpc_dt(self) -> float:
+        """MPC shooting interval (used only inside the solver)."""
         return self.Tf / self.N_horizon
 
     @property
     def Nsim(self) -> int:
-        return int(self.T_sim / self.dt)
+        """Number of closed-loop steps, driven by sim_dt (not MPC dt)."""
+        return int(self.T_sim / self.sim_dt)
 
     def initial_state(self) -> np.ndarray:
         flat_obs = np.array(self.obs0).flatten()
@@ -460,6 +521,19 @@ class SimPlotter:
 
         x0 = self.scenario.initial_state()
         ax.plot(x0[0], x0[1], "go", markersize=10, label="Start")
+
+        self.safety_ellipse = Ellipse(
+            xy=(0.0, 0.0),
+            width=2 * A_ELL_EFF,  # Total length (bow-stern)
+            height=2 * B_ELL_EFF,  # Total width (beam)
+            angle=0.0,
+            edgecolor="red",
+            facecolor="none",
+            linestyle="--",
+            linewidth=1.5,
+            alpha=0.7,
+        )
+        ax.add_patch(self.safety_ellipse)
 
         self._artists["obs_circles"] = []
         for i in range(self.scenario.obs_n):
@@ -543,6 +617,8 @@ class SimPlotter:
 
         self._lines["traj"].set_data(simX[: step + 2, 0], simX[: step + 2, 1])
         self._artists["asv"].set_xy(_triangle_verts(x[0], x[1], x[2]))
+        self.safety_ellipse.set_center((x[0], x[1]))
+        self.safety_ellipse.set_angle(np.degrees(x[2]))
 
         for oi in range(self.scenario.obs_n):
             self._artists["obs_circles"][oi].center = (x[7 + 2 * oi], x[8 + 2 * oi])
@@ -642,6 +718,41 @@ def _solve_step(step, ocp_solver, simX, t_prep, t_feedback):
     return status
 
 
+def bounce_obstacles(state, params, obs_n, bounds):
+    """Reflect obstacle positions off world bounds and flip velocities.
+
+    Mirrors obstacle_publisher.cpp's reflect-on-wall logic. Mutates both the
+    obstacle rows of `state` (so the plant sees the bounce) and the obstacle
+    velocities inside `params` (so the MPC's prediction uses the new heading).
+    """
+    x_min, x_max, y_min, y_max = bounds
+    for i in range(obs_n):
+        ox_idx = 7 + 2 * i
+        oy_idx = 8 + 2 * i
+        vx_idx = P_OBS_VEL + 2 * i
+        vy_idx = P_OBS_VEL + 2 * i + 1
+
+        ox, oy = state[ox_idx], state[oy_idx]
+        vx, vy = params[vx_idx], params[vy_idx]
+
+        if ox < x_min:
+            state[ox_idx] = x_min
+            vx = abs(vx)
+        elif ox > x_max:
+            state[ox_idx] = x_max
+            vx = -abs(vx)
+
+        if oy < y_min:
+            state[oy_idx] = y_min
+            vy = abs(vy)
+        elif oy > y_max:
+            state[oy_idx] = y_max
+            vy = -abs(vy)
+
+        params[vx_idx] = vx
+        params[vy_idx] = vy
+
+
 def run_simulation(scenario: Scenario):
     x0 = scenario.initial_state()
     params = scenario.build_params()
@@ -650,7 +761,9 @@ def run_simulation(scenario: Scenario):
     print(f"Spline parameters: {spline_params}")
     print("Setting up OCP solver...")
     ocp_solver = setup_spline_tracking_ocp(x0, params, scenario.Tf, scenario.N_horizon)
-    integrator = setup_integrator(scenario.dt, params)
+    # Plant integrator steps at the closed-loop control period (sim_dt),
+    # independently of the MPC's internal shooting interval (Tf/N_horizon).
+    integrator = setup_integrator(scenario.sim_dt, params)
 
     Nsim = scenario.Nsim
     nx = x0.shape[0]
@@ -694,6 +807,10 @@ def run_simulation(scenario: Scenario):
         # Wrap psi to [-pi, pi]
         simX[step + 1, 2] = (simX[step + 1, 2] + np.pi) % (2 * np.pi) - np.pi
 
+        # Reflect obstacles off world bounds. Also mutates params so the MPC's
+        # constant-velocity prediction on the next solve uses the new heading.
+        bounce_obstacles(simX[step + 1, :], params, scenario.obs_n, scenario.obs_bounds)
+
         # Cost diagnostics (weighted)
         ct, at, he, av = compute_costs(
             simX[step + 1, :],
@@ -708,15 +825,18 @@ def run_simulation(scenario: Scenario):
         cost_hist["c_head"][step] = w_head * he
         cost_hist["c_avoid"][step] = w_avoid * av
 
-        # Plot update
-        time = np.arange(step + 2) * scenario.dt
-        time_u = np.arange(step + 1) * scenario.dt
-        plotter.update(step, simX, simU, time, time_u, cost_hist)
+        # Plot update (time axis in real simulation seconds)
+        if (step % scenario.plot_every == 0) or (step == Nsim - 1):
+            time = np.arange(step + 2) * scenario.sim_dt
+            time_u = np.arange(step + 1) * scenario.sim_dt
+            plotter.update(step, simX, simU, time, time_u, cost_hist)
 
         if (step + 1) % 50 == 0 or step == 0:
             x = simX[step, :]
+            sim_t = (step + 1) * scenario.sim_dt
             print(
-                f"Step {step + 1}/{Nsim}: t={x[6]:.3f}, pos=({x[0]:.2f},{x[1]:.2f}), "
+                f"t={sim_t:6.2f}s ({step + 1}/{Nsim}): spline_t={x[6]:.3f}, "
+                f"pos=({x[0]:.2f},{x[1]:.2f}), "
                 f"surge={x[3]:.3f}, sway={x[4]:.3f}, "
                 f"prep={t_prep[step] * 1000:.2f}ms, "
                 f"feedback={t_feedback[step] * 1000:.2f}ms"

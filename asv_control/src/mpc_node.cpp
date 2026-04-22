@@ -341,6 +341,8 @@ public:
     debug_weights_pub_ =
         this->create_publisher<std_msgs::msg::Float64MultiArray>("/mpc/debug/w",
                                                                  10);
+    ellipse_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
+        "asv_safety_ellipse", 10);
     debug_costs_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
         "/mpc/debug/costs", 10);
     debug_costs_msg.data.resize(5); // cross, along, heading, obs_d, avoidance
@@ -412,6 +414,7 @@ private:
       debug_he_pub_, debug_residuals_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_weights_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ellipse_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr
@@ -455,8 +458,8 @@ private:
                                   100.0, 0.001, 1000.0, 0.0};
   std::vector<double> tracking_to_avoid{10.0, 0.01, 100.0, 1.0, 1.0,
                                         1.0,  1.0,  1.0,   1.0};
-  std::vector<double> avoidance_weights{0.5,   0.1,   100.0,  0.01,   0.1,
-                                        100.0, 0.001, 1000.0, 10000.0};
+  std::vector<double> avoidance_weights{0.5,   0.1,   100.0,  0.01, 0.1,
+                                        100.0, 0.001, 1000.0, 1.0};
 
   // map input [min,max] to output [min,max]
   double min_ae{200.0}, max_ae{150.0}, min_ce{10.0}, max_ce{60.0},
@@ -733,7 +736,7 @@ private:
     debug_he_pub_->publish(debug_he_msg);
     debug_residuals_pub_->publish(debug_residuals_msg);
     debug_weights_pub_->publish(debug_weights_msg);
-
+    publish_ellipse_marker(x0[0], x0[1], x0[2]);
     // MPC Debugging
     // RCLCPP_INFO(this->get_logger(),
     //             "OCP PARAMS\nSpline {%.2f, %.2f, %.2f, %.2f, %.2f, %.2f,
@@ -830,6 +833,48 @@ private:
   void filter_sol(const Eigen::Vector3d &new_sol) {
     nu_ref = nu_alpha.cwiseProduct(nu_ref) +
              (Eigen::Vector3d::Ones() - nu_alpha).cwiseProduct(new_sol);
+  }
+
+  void publish_ellipse_marker(double asv_x, double asv_y, double asv_psi) {
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = "world";
+    marker.header.stamp = this->now();
+    marker.ns = "safety_ellipse";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    // Line thickness and color (Bright Red)
+    marker.scale.x = 1.0;
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    marker.color.a = 0.5;
+
+    // Effective dimensions from your Python script
+    double A_ELL_EFF = 85.0; // 65.0 + 20.0
+    double B_ELL_EFF = 35.0; // 15.0 + 20.0
+
+    // Draw the ellipse using 50 line segments
+    int num_points = 50;
+    for (int i = 0; i <= num_points; i++) {
+      // Calculate the angle for this point
+      double theta = (double)i / num_points * 2.0 * M_PI;
+
+      // 1. Point in local ASV frame
+      double lx = A_ELL_EFF * std::cos(theta);
+      double ly = B_ELL_EFF * std::sin(theta);
+
+      // 2. Rotate to global heading and translate to global position
+      geometry_msgs::msg::Point p;
+      p.x = asv_x + (lx * std::cos(asv_psi) - ly * std::sin(asv_psi));
+      p.y = asv_y + (lx * std::sin(asv_psi) + ly * std::cos(asv_psi));
+      p.z = 0.0; // Keep it flat on the water
+
+      marker.points.push_back(p);
+    }
+
+    ellipse_pub_->publish(marker);
   }
 };
 

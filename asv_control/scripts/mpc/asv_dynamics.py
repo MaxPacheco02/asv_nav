@@ -285,10 +285,12 @@ def export_asv_model() -> ASVAcadosModel:
     # Spline evaluation
     # =========================================================================
     t_mod = ca.fmod(t, 1.0)
+    t_mod = ca.if_else(t < 0, 0.0, t_mod)
     t_mod = ca.if_else(ca.logic_and(t_mod < 1e-6, t > 0.1), 1.0, t_mod)
     t_mod = ca.if_else(ca.logic_and(t > spline_ceil, in_last_s), 1.0, t_mod)
 
     t_la_mod = ca.fmod(t_la, 1.0)
+    t_la_mod = ca.if_else(t_la < 0, 0.0, t_la_mod)
     t_la_mod = ca.if_else(ca.logic_and(t_la_mod < 1e-6, t_la > 0.1), 1.0, t_la_mod)
     t_la_mod = ca.if_else(ca.logic_and(t_la > spline_ceil, in_last_s), 1.0, t_la_mod)
 

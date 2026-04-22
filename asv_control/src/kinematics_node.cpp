@@ -86,7 +86,7 @@ protected:
     eta_dot_last = eta_dot;
 
     asv_state_msg.x = eta.x();
-    asv_state_msg.y = eta.x();
+    asv_state_msg.y = eta.y();
     asv_state_msg.psi = eta.z();
     asv_state_msg.u = nu.x();
     asv_state_msg.v = nu.y();

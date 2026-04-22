@@ -129,7 +129,7 @@ private:
   std::string type = "marker";
   std::string uuid = "";
 
-  double max_vel{20.0};
+  double max_vel{10.0};
   static const int dyn_obs_n{3};
   double area[4]{-50, 1500, -400, 400};
   double dyn_obs[dyn_obs_n][4]{
