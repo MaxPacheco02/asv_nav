@@ -32,13 +32,13 @@ class MPCWeightsTuner(QMainWindow):
             # Path-tracking default weights
             ("w_along", 0.01, 0.0, 1000.0, 0.001),
             ("w_cross", 10.0, 0.0, 1000.0, 0.001),
-            ("w_heading", 100.0, 0.0, 1000.0, 0.001),
+            ("w_heading", 100.0, 0.0, 100000.0, 0.001),
             ("w_input", 0.01, 0.0, 10.0, 0.001),
             ("w_surge", 0.1, 0.0, 1000.0, 0.001),
             ("w_sway", 100.0, 0.0, 1000.0, 0.001),
             ("w_yaw", 0.001, 0.0, 10.0, 0.001),
-            ("terminal_w", 1000.0, 0.0, 10000.0, 0.001),
-            ("avoidance_w", 1.0, 0.0, 10.0, 0.001),
+            ("terminal_w", 10.0, 0.0, 10000.0, 0.001),
+            ("avoidance_w", 50000.0, 0.0, 100000.0, 0.001),
             #
             # Avoidance default weights
             # ("w_along", 5.0, 0.0, 1000.0, 0.001),

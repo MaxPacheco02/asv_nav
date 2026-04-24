@@ -19,6 +19,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "std_msgs/msg/color_rgba.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_srvs/srv/empty.hpp"
@@ -76,19 +77,21 @@ private:
   static constexpr int N_WP = 9;  // Weight params
   static constexpr int N_AP = 3;  // Additional params
   static constexpr int N_OP = N_OBS * 2; // Obstacle params (velocities)
-  static constexpr int n_points = 10;
+  static constexpr int n_points = 20;
   static constexpr const char *frame_id = "world";
   static constexpr int sol_array_length = 10;
+  static constexpr int ellipse_points = 50;
 
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
-      max_avo_path_pub_, min_avo_path_pub_;
+      obs_path_pub_, max_avo_path_pub_, min_avo_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
       debug_ae_pub_, debug_ce_pub_, debug_he_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_weights_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ellipse_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ellipse_pub_,
+      obs_prediction_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr
@@ -121,22 +124,22 @@ private:
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.01,  10.0,  100.0,  0.01, 0.1,
-                                  100.0, 0.001, 1000.0, 0.0};
-  std::vector<double> tracking_to_avoid{10.0, 0.01, 100.0, 1.0, 1.0,
-                                        1.0,  1.0,  1.0,   1.0};
-  std::vector<double> avoidance_weights{0.5,   0.1,   100.0,  0.01, 0.1,
-                                        100.0, 0.001, 1000.0, 1.0};
+  std::vector<double> mpc_weights{0.01,  10.0,  100.0, 0.01, 0.1,
+                                  100.0, 0.001, 10.0,  0.0};
+  std::vector<double> tracking_to_avoid{10.0, 0.1, 10.0, 1.0, 1.0,
+                                        1.0,  1.0, 1.0,  1.0};
+  std::vector<double> avoidance_weights{0.1,   1.0,   1000.0, 0.01,   0.1,
+                                        100.0, 0.001, 10.0,   50000.0};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 200.0, ae_end = 150.0;
-  static constexpr double min_ce = 10.0, max_ce = 60.0;
-  static constexpr double avoidance_start = 450.0, avoidance_end = 400.0;
+  static constexpr double min_ce = 20.0, max_ce = 120.0;
+  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
 
-  double tracking_weights_dynamics[N_WP]{2.0, 5.0, 10.0, 1.0, 10000.0,
-                                         1.0, 1.0, 10.0, 1.0};
+  double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
+                                         1.0,  1.0,  10.0, 1.0};
   int warmup_count{0};
-  const int WARMUP_ITERS{5};
+  static constexpr int WARMUP_ITERS = 5;
 
   WeightParams tracking_weights_inputs[N_WP]{
       // These first weights depend on separation (cross_err)
@@ -159,6 +162,7 @@ private:
   bool mpc_broken{false};
   Eigen::Vector3d asv_breakdown;
   Eigen::Vector2d asv, nearest_obs;
+  double obs_predicted_d{std::numeric_limits<double>::max()};
 
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -188,6 +192,7 @@ private:
 
   void update() {
     // Params may always be changing
+    recompute_weights(obs_predicted_d);
     update_all_params();
 
     // Update initial state
@@ -239,7 +244,8 @@ private:
     max_avo_path_msg.header.stamp = stamp;
     sol_array_msg.header.stamp = stamp;
 
-    geometry_msgs::msg::PoseStamped tmp_pose;
+    geometry_msgs::msg::PoseStamped tmp_pose, obs_pose;
+    double min_obs_predicted_d = std::numeric_limits<double>::max();
 
     int stride = N_HORIZON / sol_array_length;
     for (int i = 0; i <= N_HORIZON; i++) {
@@ -252,15 +258,26 @@ private:
 
       sol_path_msg.poses[i] = tmp_pose;
 
+      for (int j = 0; j < 3; j++) {
+        obs_pose.pose.position.x = xtraj[i * NX + 7 + j * 2];
+        obs_pose.pose.position.y = xtraj[i * NX + 8 + j * 2];
+        double dist = distance(tmp_pose, obs_pose);
+        if (dist < min_obs_predicted_d)
+          min_obs_predicted_d = dist;
+      }
       if (i % stride == 0 && i / stride < sol_array_length) {
         sol_array_msg.poses[i / stride] = tmp_pose.pose;
       }
     }
+    publish_obs_marker(xtraj);
+    obs_predicted_d = min_obs_predicted_d;
 
-    filter_sol(Eigen::Vector3d{xtraj[NX + 3], xtraj[NX + 4], xtraj[NX + 5]});
-    ref_msg.x = xtraj[NX + 0];
-    ref_msg.y = xtraj[NX + 1];
-    ref_msg.psi = xtraj[NX + 2];
+    int sol_idx = 1;
+    filter_sol(Eigen::Vector3d{xtraj[sol_idx * NX + 3], xtraj[sol_idx * NX + 4],
+                               xtraj[sol_idx * NX + 5]});
+    ref_msg.x = xtraj[sol_idx * NX + 0];
+    ref_msg.y = xtraj[sol_idx * NX + 1];
+    ref_msg.psi = xtraj[sol_idx * NX + 2];
     ref_msg.u = nu_ref(0);
     ref_msg.v = nu_ref(1);
     ref_msg.r = nu_ref(2);
@@ -393,6 +410,13 @@ private:
     return (a - b).norm();
   }
 
+  double distance(const geometry_msgs::msg::PoseStamped &a,
+                  const geometry_msgs::msg::PoseStamped &b) {
+    double dx = a.pose.position.x - b.pose.position.x;
+    double dy = a.pose.position.y - b.pose.position.y;
+    return std::hypot(dx, dy);
+  }
+
   void filter_sol(const Eigen::Vector3d &new_sol) {
     nu_ref = nu_alpha.cwiseProduct(nu_ref) +
              (Eigen::Vector3d::Ones() - nu_alpha).cwiseProduct(new_sol);
@@ -414,15 +438,13 @@ private:
     marker.color.b = 0.0;
     marker.color.a = 0.5;
 
-    // Effective dimensions from your Python script
-    double A_ELL_EFF = 85.0; // 65.0 + 20.0
-    double B_ELL_EFF = 35.0; // 15.0 + 20.0
+    // Effective dimensions from Python script
+    double A_ELL_EFF = 95.0; // 65.0 length + safety radius
+    double B_ELL_EFF = 50.0; // 20.0 width + safety radius
 
-    // Draw the ellipse using 50 line segments
-    int num_points = 50;
-    for (int i = 0; i <= num_points; i++) {
+    for (int i = 0; i <= ellipse_points; i++) {
       // Calculate the angle for this point
-      double theta = (double)i / num_points * 2.0 * M_PI;
+      double theta = static_cast<double>(i) / ellipse_points * 2.0 * M_PI;
 
       // 1. Point in local ASV frame
       double lx = A_ELL_EFF * std::cos(theta);
@@ -438,6 +460,35 @@ private:
     }
 
     ellipse_pub_->publish(marker);
+  }
+
+  void publish_obs_marker(double *mpc_sol) {
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = frame_id;
+    marker.header.stamp = this->now();
+    marker.ns = "obstacle_predictions";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    // Line thickness
+    marker.scale.x = 1.0;
+    double r{1}, g{0.33}, b{0}, a{0.65}; // Orange
+    marker.color =
+        std_msgs::build<std_msgs::msg::ColorRGBA>().r(r).g(g).b(b).a(a);
+
+    int last_sol = N_HORIZON * NX;
+    geometry_msgs::msg::Point p;
+    for (int i = 0; i < N_OBS; i++) {
+      p.x = mpc_sol[7 + 2 * i];
+      p.y = mpc_sol[8 + 2 * i];
+      marker.points.push_back(p);
+      p.x = mpc_sol[last_sol + 7 + 2 * i];
+      p.y = mpc_sol[last_sol + 8 + 2 * i];
+      marker.points.push_back(p);
+    }
+
+    obs_prediction_pub_->publish(marker);
   }
 
   void init_parameters() {
@@ -494,28 +545,6 @@ private:
           x0[6] = msg.data;
           ocp_params[N_SP + N_WP + 2] = ceil(msg.data);
           cross_e = get_crosstrack_e();
-
-          // Variable weights dependant on crosstrack or alongtrack errors.
-          nearest_obs = get_nearest_obs();
-          obs_d = distance(asv, nearest_obs);
-          double alpha =
-              interpol_at(avoidance_start, avoidance_end, 1.0, 0.0, obs_d);
-          // Path-tracking weights
-          for (int i = 0; i < N_WP; i++) {
-            // Get path-tracking weight
-            if (i < 3)
-              pt_weights[i] =
-                  var_w_at(mpc_weights[i], tracking_weights_inputs[i],
-                           tracking_weights_dynamics[i], cross_e);
-            else
-              pt_weights[i] =
-                  var_w_at(mpc_weights[i], tracking_weights_inputs[i],
-                           tracking_weights_dynamics[i], along_e);
-
-            // Interpolate weights
-            ocp_params[N_SP + i] =
-                pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
-          }
         });
 
     spline_params_sub_ =
@@ -540,7 +569,7 @@ private:
         this->create_subscription<asv_interfaces::msg::ObstacleList>(
             "/mpc/near_obs", 10,
             [this](const asv_interfaces::msg::ObstacleList &msg) {
-              if ((int)msg.obs_list.size() < N_OBS)
+              if (static_cast<int>(msg.obs_list.size()) < N_OBS)
                 return;
               for (int i = 0; i < N_OBS; i++) {
                 x0[7 + i * 2] = msg.obs_list[i].x;
@@ -571,7 +600,7 @@ private:
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u",
                             u_zero);
           }
-
+          warmup_count = 0;
           RCLCPP_INFO(this->get_logger(), "Solver reset complete");
         });
 
@@ -607,14 +636,35 @@ private:
         new_time_steps[i] = mpc_dt;
       }
 
-      int status = asv_dynamics_acados_update_time_steps(ocp_capsule, N_HORIZON,
-                                                         new_time_steps);
+      // Tear down the existing solver
+      asv_dynamics_acados_free(ocp_capsule);
+      asv_dynamics_acados_free_capsule(ocp_capsule);
+
+      // Recreate with new discretization
+      ocp_capsule = asv_dynamics_acados_create_capsule();
+      int status = asv_dynamics_acados_create_with_discretization(
+          ocp_capsule, N_HORIZON, new_time_steps);
+
+      // Re-fetch all the handles since they point into the new capsule
+      nlp_config = asv_dynamics_acados_get_nlp_config(ocp_capsule);
+      nlp_dims = asv_dynamics_acados_get_nlp_dims(ocp_capsule);
+      nlp_in = asv_dynamics_acados_get_nlp_in(ocp_capsule);
+      nlp_out = asv_dynamics_acados_get_nlp_out(ocp_capsule);
+      nlp_solver = asv_dynamics_acados_get_nlp_solver(ocp_capsule);
+
+      // Push current params to every stage (fresh solver has defaults)
+      for (int i = 0; i <= N_HORIZON; i++) {
+        asv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
+      }
+
+      // Force warmup so the next solve rebuilds a good trajectory
+      warmup_count = 0;
 
       if (status != 0)
-        RCLCPP_WARN(this->get_logger(), "Failed to update time steps!");
+        RCLCPP_WARN(this->get_logger(),
+                    "Failed to recreate solver with new Tf!");
       else
-        RCLCPP_INFO(this->get_logger(),
-                    "Successfully updated MPC horizon: Tf=%.2fs, dt=%.4fs",
+        RCLCPP_INFO(this->get_logger(), "Recreated solver: Tf=%.2fs, dt=%.4fs",
                     mpc_tf, mpc_dt);
     };
     tf_param_handle_ =
@@ -626,6 +676,8 @@ private:
         this->create_publisher<std_msgs::msg::Float64>("/mpc/sol_time", 10);
     sol_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/sol_path", 10);
+    obs_path_pub_ =
+        this->create_publisher<nav_msgs::msg::Path>("/mpc/obs_path", 10);
     min_avo_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/min_avo_path", 10);
     max_avo_path_pub_ =
@@ -645,7 +697,11 @@ private:
         ("/mpc/debug/w", 10);
     ellipse_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
         "asv_safety_ellipse", 10);
+    obs_prediction_pub_ =
+        this->create_publisher<visualization_msgs::msg::Marker>(
+            "/mpc/obs_prediction", 10);
   }
+
   void init_acados_solver() {
     RCLCPP_INFO(this->get_logger(), "Creating OCP solver...");
     ocp_capsule = asv_dynamics_acados_create_capsule();
@@ -672,6 +728,25 @@ private:
 
     for (int i = 0; i < N_WP; i++) {
       ocp_params[N_SP + i] = mpc_weights[i];
+    }
+  }
+
+  // Variable weights dependant on crosstrack or alongtrack errors.
+  void recompute_weights(double d) {
+    double alpha = interpol_at(avoidance_start, avoidance_end, 1.0, 0.0, d);
+    // Path-tracking weights
+    for (int i = 0; i < N_WP; i++) {
+      // Get path-tracking weight
+      if (i < 3)
+        pt_weights[i] = var_w_at(mpc_weights[i], tracking_weights_inputs[i],
+                                 tracking_weights_dynamics[i], cross_e);
+      else
+        pt_weights[i] = var_w_at(mpc_weights[i], tracking_weights_inputs[i],
+                                 tracking_weights_dynamics[i], along_e);
+
+      // Interpolate weights
+      ocp_params[N_SP + i] =
+          pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
     }
   }
 };

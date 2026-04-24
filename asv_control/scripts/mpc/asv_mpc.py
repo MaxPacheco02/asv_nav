@@ -23,7 +23,7 @@ from asv_dynamics import export_asv_model
 # =============================================================================
 # Configuration
 # =============================================================================
-TF = 50.0
+TF = 100.0
 N_HORIZON = 25
 T_SIM = 1000.0
 
@@ -36,9 +36,9 @@ WARMUP_STEPS = 5
 
 # Ellipse defining ASV footprint (semi-axes, metres)
 A_ELLIPSE = 65.0  # longitudinal (bow-stern)
-B_ELLIPSE = 15.0  # lateral (beam)
+B_ELLIPSE = 20.0  # lateral (beam)
 ELLIPSE_OFFSET = 0.0  # shift centre fore/aft if COG isn't midship
-R_SAFE_ELLIPSE = 20.0  # extra buffer added to both axes
+R_SAFE_ELLIPSE = 30.0  # extra buffer added to both axes
 
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE
@@ -50,10 +50,12 @@ TZ_MAX = 222224.5896 * 61.1
 
 # Control bounds
 U_FORCE_MIN, U_FORCE_MAX = -1.0, 1.0
-DT_MIN, DT_MAX = -0.01, 1.0
+DT_MIN, DT_MAX = -0.01, 0.1
 
 # State bounds: surge, sway, yaw-rate
-SURGE_MIN, SURGE_MAX = -6.945, 5.9678
+# Physical surge limits (from vehicle specs): [-6.945, 5.9678] m/s
+# Tightened to avoid thruster force saturation
+SURGE_MIN, SURGE_MAX = -3.0, 5.0
 SWAY_MIN, SWAY_MAX = -0.32, 0.32
 YAW_MIN, YAW_MAX = -0.00899, 0.00899
 
@@ -86,6 +88,17 @@ P_OBS_VEL = P_AUX + 3  # (28) Index for each obstacle velocity
 # =============================================================================
 # OCP construction
 # =============================================================================
+def _avoidance_residual(x_pos, y_pos, psi, obs_x, obs_y, w_avoidance):
+    dx = obs_x - x_pos
+    dy = obs_y - y_pos
+    ox_body = dx * cos(psi) + dy * sin(psi) - ELLIPSE_OFFSET
+    oy_body = -dx * sin(psi) + dy * cos(psi)
+    ellipse_val = (ox_body / A_ELL_EFF) ** 2 + (oy_body / B_ELL_EFF) ** 2
+    return ca.sqrt(w_avoidance) * (1.0 / ca.fmax(ellipse_val, D_CLAMP)) ** (
+        AVO_POWER / 2
+    )
+
+
 def _build_residuals(model, terminal: bool):
     """Build stage or terminal residual vector.
 
@@ -149,6 +162,12 @@ def _build_residuals(model, terminal: bool):
         scale * ca.sqrt(w_sway) * sway,
         scale * ca.sqrt(w_yaw) * yaw,
     ]
+
+    # Avoidance cost — active everywhere, grows near obstacles
+    for i in range(OBS_N):
+        obs_x = model.x[7 + 2 * i]
+        obs_y = model.x[8 + 2 * i]
+        pieces.append(_avoidance_residual(x_pos, y_pos, psi, obs_x, obs_y, w_avoidance))
 
     return vertcat(*pieces)
 
@@ -260,7 +279,7 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     opts.sim_method_num_stages = 4
     opts.sim_method_num_steps = 3
     opts.sim_method_newton_iter = 3
-    opts.qp_solver_iter_max = 500
+    opts.qp_solver_iter_max = 1000
     opts.nlp_solver_max_iter = 200
     opts.qp_solver_cond_N = N_horizon // 2
     opts.regularize_method = "PROJECT_REDUC_HESS"
@@ -271,7 +290,7 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     opts.qp_solver_tol_comp = 1e-6
     opts.globalization = "MERIT_BACKTRACKING"
     opts.alpha_min = 0.01
-    opts.alpha_reduction = 0.7
+    opts.alpha_reduction = 0.5
     opts.nlp_solver_type = "SQP_RTI"
 
     ocp.code_export_directory = "c_generated_code_asv_ocp"
@@ -416,7 +435,7 @@ class Scenario:
     )
 
     # Cost weights: along, cross, heading, input, surge, sway, yaw, term, avo
-    weights: tuple = (0.5, 1.0, 10.0, 0.001, 0.001, 10.0, 0.001, 1.0, 100.0)
+    weights: tuple = (0.5, 1.0, 10.0, 0.001, 0.001, 10.0, 0.001, 1.0, 1.0)
 
     # Aux params: t_la, in_last_s, spline_ceil
     aux: tuple = (1.0, 1.0, 1.0)
