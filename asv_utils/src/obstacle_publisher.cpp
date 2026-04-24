@@ -226,7 +226,7 @@ private:
   }
 
   void update_dyn() {
-    double dt = 0.01;
+    double dt = 0.1;
     for (int i = 0; i < dyn_obs_n; i++) {
       dyn_obs[i][0] += dyn_obs[i][2] * dt;
       dyn_obs[i][1] += dyn_obs[i][3] * dt;
