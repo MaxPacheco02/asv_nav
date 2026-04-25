@@ -72,10 +72,26 @@ Azimuth AITSMC_SSY::update(const State &state, const State &setpoint) {
   double Fy0 = (Ty + Tz / model.lx0) / 2.0;
   double Fy1 = (Ty - Tz / model.lx0) / 2.0;
 
-  out.force0 = std::hypot(Fx0, Fy0);
-  out.force1 = std::hypot(Fx1, Fy1);
-  out.ang0 = std::atan2(Fy0, Fx0);
-  out.ang1 = std::atan2(Fy1, Fx1);
+  // Dead-band: when demanded force is tiny, hold previous angle and zero
+  // the magnitude. Avoids azimuth chattering at steady state.
+  // Rate-limit: cap angle change to physically realizable slew rate.
+  constexpr double F_DEAD = 2222.0; // ~1% of u_max
+  constexpr double MAX_SLEW = 0.1;  // rad/step ≈ 10 deg/s @ 100Hz
+
+  auto allocate = [MAX_SLEW](double Fx, double Fy, double &prev_ang) {
+    double mag = std::hypot(Fx, Fy);
+    if (mag < F_DEAD) {
+      return std::make_pair(0.0, prev_ang);
+    }
+    double desired_ang = std::atan2(Fy, Fx);
+    double delta = AITSMC::normalize_angle(desired_ang - prev_ang);
+    delta = std::clamp(delta, -MAX_SLEW, MAX_SLEW);
+    prev_ang = AITSMC::normalize_angle(prev_ang + delta);
+    return std::make_pair(mag, prev_ang);
+  };
+
+  std::tie(out.force0, out.ang0) = allocate(Fx0, Fy0, prev_ang0);
+  std::tie(out.force1, out.ang1) = allocate(Fx1, Fy1, prev_ang1);
 
   // Clamp forces
   if (out.force0 > model.u_max || out.force1 > model.u_max) {

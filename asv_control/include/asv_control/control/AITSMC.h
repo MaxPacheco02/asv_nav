@@ -45,6 +45,9 @@ protected:
 
   std::array<AITSMCDebugData, 3> debugData;
   DynamicModel model;
+
+  double prev_ang0{0.0};
+  double prev_ang1{0.0};
 };
 
 #endif
