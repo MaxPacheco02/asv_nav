@@ -131,7 +131,7 @@ private:
 
   double max_vel{10.0};
   static const int dyn_obs_n{3};
-  double area[4]{-50, 1500, -400, 400};
+  double area[4]{-1000, 4500, -1400, 1400};
   double dyn_obs[dyn_obs_n][4]{
       {100., 2., -10.20, 1.0},
       {100., 0., 3.0, 4.0},

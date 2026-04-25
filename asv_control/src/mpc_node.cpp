@@ -133,7 +133,7 @@ private:
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 200.0, ae_end = 150.0;
-  static constexpr double min_ce = 20.0, max_ce = 120.0;
+  static constexpr double min_ce = 10.0, max_ce = 120.0;
   static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
 
   double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
@@ -286,7 +286,9 @@ private:
     debug_ae_msg.data = along_e;
     debug_he_msg.data = get_heading_e();
     for (int i = 0; i < N_WP; i++) {
-      debug_weights_msg.data[i] = ocp_params[N_SP + i];
+      double w = ocp_params[N_SP + i];
+      // Transform weights to log-scale for better visualization.
+      debug_weights_msg.data[i] = (w > 0.0) ? std::log10(w) : -6.0;
     }
 
     sol_time_pub_->publish(sol_time_msg);
@@ -694,7 +696,7 @@ private:
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/h_e", 10);
     debug_weights_pub_ =
         this->create_publisher<std_msgs::msg::Float64MultiArray> //
-        ("/mpc/debug/w", 10);
+        ("/mpc/debug/w_log", 10);
     ellipse_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
         "asv_safety_ellipse", 10);
     obs_prediction_pub_ =

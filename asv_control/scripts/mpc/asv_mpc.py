@@ -55,7 +55,7 @@ DT_MIN, DT_MAX = -0.01, 0.1
 # State bounds: surge, sway, yaw-rate
 # Physical surge limits (from vehicle specs): [-6.945, 5.9678] m/s
 # Tightened to avoid thruster force saturation
-SURGE_MIN, SURGE_MAX = -3.0, 5.0
+SURGE_MIN, SURGE_MAX = -6.945, 5.9678
 SWAY_MIN, SWAY_MAX = -0.32, 0.32
 YAW_MIN, YAW_MAX = -0.00899, 0.00899
 
