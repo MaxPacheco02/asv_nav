@@ -234,7 +234,7 @@ Visualization Manager:
       Enabled: true
       Name: Obs. markers
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -246,7 +246,7 @@ Visualization Manager:
       Enabled: true
       Name: Obs. on_watch
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -363,13 +363,13 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /mpc/min_avo_path
+        Value: /mpc/avo_path
       Value: true
     - Alpha: 0.5
       Buffer Length: 1
       Class: rviz_default_plugins/Path
       Color: 255; 0; 0
-      Enabled: true
+      Enabled: false
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -392,7 +392,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /mpc/max_avo_path
-      Value: true
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
@@ -495,11 +495,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 0.848783552646637
+      Scale: 0.8061637878417969
       Target Frame: asv
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 167.5811004638672
-      Y: 23.351463317871094
+      X: 0
+      Y: 0
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 10

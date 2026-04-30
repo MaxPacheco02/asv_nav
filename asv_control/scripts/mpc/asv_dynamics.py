@@ -58,9 +58,11 @@ def export_asv_model() -> ASVAcadosModel:
     Nvr = -1898179771.979401
 
     # Thruster limits for normalization
-    Tx_max = 2 * 222224.5896  # ~444 kN
-    Ty_max = 2 * 222224.5896  # ~444 kN (both thrusters lateral)
-    Tz_max = 222224.5896 * 61.1  # ~13.6M N·m
+    # T_max = 222224.5896 # Original T_max
+    T_max = 222224.5896 * 0.5  # Conservative T_max for smoother control
+    Tx_max = 2 * T_max  # ~444 kN
+    Ty_max = 2 * T_max  # ~444 kN (both thrusters lateral)
+    Tz_max = T_max * 61.1  # ~13.6M N·m
 
     # Inertia matrix M (constant) — precomputed numerically
     M_np = np.array(

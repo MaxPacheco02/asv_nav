@@ -47,13 +47,11 @@ public:
     timer_ = this->create_wall_timer(50ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = frame_id;
-    min_avo_path_msg.header.frame_id = frame_id;
-    max_avo_path_msg.header.frame_id = frame_id;
+    avo_path_msg.header.frame_id = frame_id;
     sol_array_msg.header.frame_id = frame_id;
 
     sol_path_msg.poses.resize(N_HORIZON + 1);
-    min_avo_path_msg.poses.resize(n_points);
-    max_avo_path_msg.poses.resize(n_points);
+    avo_path_msg.poses.resize(n_points);
     sol_array_msg.poses.resize(sol_array_length);
 
     init_acados_solver();
@@ -83,11 +81,11 @@ private:
   static constexpr int ellipse_points = 50;
 
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
-      obs_path_pub_, max_avo_path_pub_, min_avo_path_pub_;
+      obs_path_pub_, avo_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
-      debug_ae_pub_, debug_ce_pub_, debug_he_pub_;
+      debug_ae_pub_, debug_ce_pub_, debug_he_pub_, debug_min_d_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_weights_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ellipse_pub_,
@@ -112,8 +110,9 @@ private:
       enabled_param_handle_, tf_param_handle_;
 
   asv_interfaces::msg::Ref ref_msg;
-  std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg;
-  nav_msgs::msg::Path sol_path_msg, min_avo_path_msg, max_avo_path_msg;
+  std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
+      debug_min_d_msg;
+  nav_msgs::msg::Path sol_path_msg, avo_path_msg;
   geometry_msgs::msg::PoseArray sol_array_msg;
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
@@ -129,12 +128,13 @@ private:
   std::vector<double> tracking_to_avoid{10.0, 0.1, 10.0, 1.0, 1.0,
                                         1.0,  1.0, 1.0,  1.0};
   std::vector<double> avoidance_weights{0.1,   1.0,   1000.0, 0.01,   0.1,
-                                        100.0, 0.001, 10.0,   50000.0};
+                                        100.0, 0.001, 10.0,   75000.0};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 200.0, ae_end = 150.0;
   static constexpr double min_ce = 10.0, max_ce = 120.0;
-  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
+  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0,
+                          avoidance_dist = 1500.0;
 
   double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
                                          1.0,  1.0,  10.0, 1.0};
@@ -240,8 +240,7 @@ private:
 
     auto stamp = this->get_clock()->now();
     sol_path_msg.header.stamp = stamp;
-    min_avo_path_msg.header.stamp = stamp;
-    max_avo_path_msg.header.stamp = stamp;
+    avo_path_msg.header.stamp = stamp;
     sol_array_msg.header.stamp = stamp;
 
     geometry_msgs::msg::PoseStamped tmp_pose, obs_pose;
@@ -285,10 +284,11 @@ private:
     debug_ce_msg.data = cross_e;
     debug_ae_msg.data = along_e;
     debug_he_msg.data = get_heading_e();
+    debug_min_d_msg.data = min_obs_predicted_d;
     for (int i = 0; i < N_WP; i++) {
       double w = ocp_params[N_SP + i];
       // Transform weights to log-scale for better visualization.
-      debug_weights_msg.data[i] = (w > 0.0) ? std::log10(w) : -6.0;
+      debug_weights_msg.data[i] = (w > 0.0) ? std::log10(w) : -3.0;
     }
 
     sol_time_pub_->publish(sol_time_msg);
@@ -320,27 +320,24 @@ private:
       mpc_broken = false;
     }
 
-    // Draw min/max avoidance radius circles around ASV
+    // Draw radius circle around ASV for distance aid while adding dynamic
+    // obstacles
     geometry_msgs::msg::PoseStamped p;
     p.header.frame_id = frame_id;
     for (int i = 0; i < n_points; i++) {
       double angle = 2.0 * M_PI * i / (n_points - 1);
 
-      p.pose.position.x = x0[0] + avoidance_start * std::cos(angle);
-      p.pose.position.y = x0[1] + avoidance_start * std::sin(angle);
-      min_avo_path_msg.poses[i] = p; // least avoidance behavior
-
-      p.pose.position.x = x0[0] + avoidance_end * std::cos(angle);
-      p.pose.position.y = x0[1] + avoidance_end * std::sin(angle);
-      max_avo_path_msg.poses[i] = p; // most avoidance behavior
+      p.pose.position.x = x0[0] + avoidance_dist * std::cos(angle);
+      p.pose.position.y = x0[1] + avoidance_dist * std::sin(angle);
+      avo_path_msg.poses[i] = p;
     }
 
-    min_avo_path_pub_->publish(min_avo_path_msg);
-    max_avo_path_pub_->publish(max_avo_path_msg);
+    avo_path_pub_->publish(avo_path_msg);
     ref_pub_->publish(ref_msg);
     debug_ae_pub_->publish(debug_ae_msg);
     debug_ce_pub_->publish(debug_ce_msg);
     debug_he_pub_->publish(debug_he_msg);
+    debug_min_d_pub_->publish(debug_min_d_msg);
     debug_weights_pub_->publish(debug_weights_msg);
     publish_ellipse_marker(x0[0], x0[1], x0[2]);
   }
@@ -680,10 +677,8 @@ private:
         this->create_publisher<nav_msgs::msg::Path>("/mpc/sol_path", 10);
     obs_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/obs_path", 10);
-    min_avo_path_pub_ =
-        this->create_publisher<nav_msgs::msg::Path>("/mpc/min_avo_path", 10);
-    max_avo_path_pub_ =
-        this->create_publisher<nav_msgs::msg::Path>("/mpc/max_avo_path", 10);
+    avo_path_pub_ =
+        this->create_publisher<nav_msgs::msg::Path>("/mpc/avo_path", 10);
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
     ref_pub_ =
@@ -694,6 +689,8 @@ private:
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/c_e", 10);
     debug_he_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/h_e", 10);
+    debug_min_d_pub_ =
+        this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/min_d", 10);
     debug_weights_pub_ =
         this->create_publisher<std_msgs::msg::Float64MultiArray> //
         ("/mpc/debug/w_log", 10);
