@@ -1,36 +1,12 @@
-"""
-This script launches the mpc node with its parameters, and auxiliary nodes
-"""
-
-import os
-
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    # weights_config = os.path.join(
-    #     get_package_share_directory('usv_control'),
-    #     'config',
-    #     'weights.yaml'
-    # )
-
     mpc_node = Node(
         package="asv_control",
         executable="mpc_node",
-        # parameters=[weights_config],
-        ros_arguments=["--log-level", "FATAL"],
-    )
-
-    spline_publisher_node = Node(
-        package="asv_control",
-        executable="spline_publisher_node",
-    )
-
-    obstacle_nearest_publisher = Node(
-        package="asv_utils",
-        executable="obstacle_nearest_publisher",
+        ros_arguments=["--log-level", "WARN"],
     )
 
     mpc_gui = Node(
@@ -40,9 +16,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            # mpc_node,
-            spline_publisher_node,
-            # obstacle_nearest_publisher,
+            mpc_node,
             mpc_gui,
         ]
     )

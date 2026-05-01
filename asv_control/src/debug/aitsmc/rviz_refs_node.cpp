@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "asv_interfaces/msg/ref.hpp"
+#include "asv_interfaces/msg/state.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 
@@ -22,7 +22,7 @@ public:
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 1,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-          asv_interfaces::msg::Ref ref;
+          asv_interfaces::msg::State ref;
 
           auto &q = msg->pose.orientation;
           ref.x = msg->pose.position.x;
@@ -33,13 +33,13 @@ public:
         });
 
     ref_pub_ =
-        this->create_publisher<asv_interfaces::msg::Ref>("asv/state/ref", 10);
+        this->create_publisher<asv_interfaces::msg::State>("asv/state/ref", 10);
   }
 
 private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
       goal_pose_sub_;
-  rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
 };
 
 int main(int argc, char **argv) {

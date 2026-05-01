@@ -14,7 +14,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "asv_interfaces/msg/obstacle_list.hpp"
-#include "asv_interfaces/msg/ref.hpp"
+#include "asv_interfaces/msg/state.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -83,7 +83,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
       obs_path_pub_, avo_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
-  rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
       debug_ae_pub_, debug_ce_pub_, debug_he_pub_, debug_min_d_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
@@ -109,7 +109,7 @@ private:
   std::shared_ptr<rclcpp::ParameterCallbackHandle> weights_param_handle_,
       enabled_param_handle_, tf_param_handle_;
 
-  asv_interfaces::msg::Ref ref_msg;
+  asv_interfaces::msg::State ref_msg;
   std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
       debug_min_d_msg;
   nav_msgs::msg::Path sol_path_msg, avo_path_msg;
@@ -682,7 +682,7 @@ private:
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
     ref_pub_ =
-        this->create_publisher<asv_interfaces::msg::Ref>("/asv/state/ref", 10);
+        this->create_publisher<asv_interfaces::msg::State>("/asv/state/ref", 10);
     debug_ae_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/a_e", 10);
     debug_ce_pub_ =

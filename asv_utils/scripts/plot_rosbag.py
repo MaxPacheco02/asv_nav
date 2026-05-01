@@ -51,6 +51,7 @@ ASV_MSGS = [
     ),
     ("asv_interfaces/msg/ObstacleList", "asv_interfaces/msg/Obstacle[] obs_list\n"),
     (
+        # Deprecated now, but old bags might still use this.
         "asv_interfaces/msg/Ref",
         "float64 x\nfloat64 y\nfloat64 psi\nfloat64 u\nfloat64 u_dot\nfloat64 v\nfloat64 v_dot\nfloat64 r\nfloat64 r_dot\n",
     ),

@@ -1,0 +1,321 @@
+{
+  "configById": {
+    "Plot!1zne0ef": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[0]",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "along_w"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[1]",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "d493467d-8d76-4ba2-8a1e-83238deb32f4",
+          "label": "cross_w"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[2]",
+          "enabled": true,
+          "color": "#f7df71",
+          "id": "dd0478c5-7992-478c-a353-e4ac22c00a13",
+          "label": "heading_w"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[4]",
+          "enabled": true,
+          "color": "#a395e2",
+          "id": "a6748b7d-2c51-4f18-8f06-2b5ebd4f46a2",
+          "label": "surge_w",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[7]",
+          "enabled": true,
+          "color": "#61cbff",
+          "id": "a87333d9-3caf-49a7-af49-5f51fa4db40b",
+          "label": "terminal_w"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/w_log.data[8]",
+          "enabled": true,
+          "color": "#5cd6a9",
+          "id": "36c7eece-6288-4bca-8938-e24952cf53e1",
+          "label": "avoid_w"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 83.8990478515625,
+      "timeWindowMode": "sliding",
+      "playbackBarPosition": "right",
+      "followingViewWidth": 30
+    },
+    "Plot!13pr6xi": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/sol_time.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "a46bc253-e9c9-4182-9ff2-5f74b4429a74",
+          "label": "sol time"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 32.77830505371094,
+      "timeWindowMode": "automatic",
+      "followingViewWidth": 5,
+      "foxglovePanelTitle": ""
+    },
+    "Plot!42c8ydh": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/c_e.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "c_e"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/a_e.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "fc17b584-f0a9-4f2d-a23a-306f2cef0ae9",
+          "label": "a_e"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mpc/debug/min_d.data",
+          "enabled": true,
+          "color": "#f7df71",
+          "id": "b701b552-bc1b-4df8-a8ca-9241066ca336",
+          "label": "min_d"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "yAxisLabel": "",
+      "timeWindowMode": "automatic",
+      "minXValue": 1,
+      "maxXValue": 10,
+      "playbackBarPosition": "right"
+    },
+    "Plot!2bz73wq": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state/ref.u",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "u_d"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state.u",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "c44b8b0a-70e6-41a3-bbc8-4ed90ff8ccd1",
+          "label": "u"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 100,
+      "playbackBarPosition": "right"
+    },
+    "Plot!16n7v28": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state/ref.v",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "v_d"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state.v",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "c44b8b0a-70e6-41a3-bbc8-4ed90ff8ccd1",
+          "label": "v"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 100
+    },
+    "Plot!gjm51c": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state/ref.r",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "r_d"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/state.r",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "c44b8b0a-70e6-41a3-bbc8-4ed90ff8ccd1",
+          "label": "r"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!e4ph0i": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/thrust.force0",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "f0"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/thrust.force1",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "c44b8b0a-70e6-41a3-bbc8-4ed90ff8ccd1",
+          "label": "f1"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 100,
+      "playbackBarPosition": "right"
+    },
+    "Plot!16g75pt": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/thrust.ang0",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "6d962719-4fd5-4eac-9862-c126628301b7",
+          "label": "ang0"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/asv/thrust.ang1",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "c44b8b0a-70e6-41a3-bbc8-4ed90ff8ccd1",
+          "label": "ang1"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 100,
+      "playbackBarPosition": "right"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": {
+        "first": {
+          "first": "Plot!1zne0ef",
+          "second": "Plot!13pr6xi",
+          "direction": "row",
+          "splitPercentage": 75.11199388757188
+        },
+        "second": "Plot!42c8ydh",
+        "direction": "column",
+        "splitPercentage": 51.900205307075595
+      },
+      "second": {
+        "first": "Plot!2bz73wq",
+        "second": {
+          "first": "Plot!16n7v28",
+          "second": "Plot!gjm51c",
+          "direction": "column"
+        },
+        "direction": "column",
+        "splitPercentage": 32.736664942599994
+      },
+      "direction": "row"
+    },
+    "second": {
+      "first": "Plot!e4ph0i",
+      "second": "Plot!16g75pt",
+      "direction": "row"
+    },
+    "direction": "column",
+    "splitPercentage": 83.39860664928408
+  }
+}

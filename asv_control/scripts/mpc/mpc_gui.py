@@ -372,7 +372,7 @@ class MPCWeightsTuner(QMainWindow):
 
 class MPCWeightsNode(Node):
     def __init__(self):
-        super().__init__("mpc_weights_tuner")
+        super().__init__("mpc_gui")
 
         self.set_params_client = self.create_client(
             SetParameters, "/mpc_node/set_parameters"

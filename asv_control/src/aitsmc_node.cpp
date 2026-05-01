@@ -10,7 +10,6 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "asv_interfaces/msg/aitsmc_debug.hpp"
-#include "asv_interfaces/msg/ref.hpp"
 #include "asv_interfaces/msg/state.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
@@ -56,8 +55,8 @@ public:
           odom_received = true;
         });
 
-    reference_sub_ = this->create_subscription<asv_interfaces::msg::Ref>(
-        "asv/state/ref", 10, [this](const asv_interfaces::msg::Ref &msg) {
+    reference_sub_ = this->create_subscription<asv_interfaces::msg::State>(
+        "asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
           if (mode_ == ControlMode::XYH) {
             if (std::abs(pow(msg.x - asv_d.x, 2) + pow(msg.y - asv_d.y, 2)) >
                 30.0)
@@ -149,7 +148,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_pose_pub_;
 
   rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr state_sub_;
-  rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr reference_sub_;
+  rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr reference_sub_;
 
   geometry_msgs::msg::PoseStamped ref_pose_msg;
 

@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <random>
 
-#include "asv_interfaces/msg/ref.hpp"
 #include "asv_interfaces/msg/state.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
@@ -42,8 +41,8 @@ public:
                          1.0 - 2.0 * (q.y * q.y + q.z * q.z));
         });
 
-    input_sub_ = this->create_subscription<asv_interfaces::msg::Ref>(
-        "asv/state/ref", 10, [this](const asv_interfaces::msg::Ref &msg) {
+    input_sub_ = this->create_subscription<asv_interfaces::msg::State>(
+        "asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
           last_nu_msg = this->get_clock()->now();
           nu << msg.u, msg.v, msg.r;
         });
@@ -144,7 +143,7 @@ private:
 
   int path_count{0};
 
-  rclcpp::Subscription<asv_interfaces::msg::Ref>::SharedPtr input_sub_;
+  rclcpp::Subscription<asv_interfaces::msg::State>::SharedPtr input_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
       initial_pose_sub_;
 

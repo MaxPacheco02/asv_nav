@@ -17,7 +17,6 @@ find_package(visualization_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(usv_interfaces REQUIRED)
 find_package(asv_interfaces REQUIRED)
 
 set(DEPENDENCIES
@@ -32,7 +31,6 @@ set(DEPENDENCIES
     std_srvs
     Eigen3
     tf2_geometry_msgs
-    usv_interfaces
     asv_interfaces)
 
 add_executable(aitsmc_node src/aitsmc_node.cpp src/dynamic_model.cpp

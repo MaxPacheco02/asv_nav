@@ -18,7 +18,6 @@
   <buildtool_depend>sensor_msgs</buildtool_depend>
   <buildtool_depend>Eigen3</buildtool_depend>
   <buildtool_depend>tf2_ros</buildtool_depend>
-  <buildtool_depend>usv_interfaces</buildtool_depend>
   <buildtool_depend>asv_interfaces</buildtool_depend>
 
   <test_depend>ament_lint_auto</test_depend>
@@ -37,7 +36,6 @@
     <buildtool_type>sensor_msgs</buildtool_type>
     <buildtool_type>Eigen3</buildtool_type>
     <buildtool_type>tf2_ros</buildtool_type>
-    <buildtool_type>usv_interfaces</buildtool_type>
     <buildtool_type>asv_interfaces</buildtool_type>
   </export>
 </package>

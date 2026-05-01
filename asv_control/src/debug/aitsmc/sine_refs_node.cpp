@@ -1,5 +1,4 @@
 #include <asv_interfaces/msg/detail/aitsmc_debug__struct.hpp>
-#include <asv_interfaces/msg/detail/ref__struct.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -13,7 +12,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "asv_interfaces/msg/aitsmc_debug.hpp"
-#include "asv_interfaces/msg/ref.hpp"
+#include "asv_interfaces/msg/state.hpp"
 #include "asv_interfaces/msg/thrust.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -38,7 +37,7 @@ public:
     this->declare_parameter("off_psi", 0.0);
 
     ref_pub_ =
-        this->create_publisher<asv_interfaces::msg::Ref>("asv/state/ref", 10);
+        this->create_publisher<asv_interfaces::msg::State>("asv/state/ref", 10);
 
     update_timer_ = this->create_wall_timer(
         10ms, std::bind(&RefsPublisherNode::update, this));
@@ -58,7 +57,7 @@ protected:
     // y_dot = a*2pi*f * cos(2pi * f * x)
     sig_d = (amp.cwiseProduct(2 * M_PI * freq)).cwiseProduct(cos_);
 
-    asv_interfaces::msg::Ref ref_msg;
+    asv_interfaces::msg::State ref_msg;
     ref_msg.x = sig(0);
     ref_msg.y = sig(1);
     ref_msg.psi = sig(2);
@@ -68,7 +67,7 @@ protected:
   }
 
 private:
-  rclcpp::Publisher<asv_interfaces::msg::Ref>::SharedPtr ref_pub_;
+  rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
 
   rclcpp::TimerBase::SharedPtr update_timer_;
 
