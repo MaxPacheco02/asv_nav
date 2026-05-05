@@ -296,6 +296,11 @@ python3 asv_mpc.py false    # codegen only
 Generates publication-quality figures from a recorded experiment:
 
 ```bash
+# First, record a rosbag while the nodes are running. 
+# Since over 20 topics are relevant, it is better to just record all topics.
+ros2 bag record --all
+
+# Then, generate the figures.
 cd asv_utils/scripts
 python3 plot_rosbag.py <path/to/bag_directory>
 

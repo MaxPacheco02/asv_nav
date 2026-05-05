@@ -20,6 +20,8 @@ rosidl_generate_interfaces(
   "msg/ObstacleList.msg"
   "msg/State.msg"
   "msg/Thrust.msg"
+  "msg/Spline.msg"
+  "msg/SplineParams.msg"
   DEPENDENCIES
   std_msgs)
 

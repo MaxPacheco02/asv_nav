@@ -14,6 +14,8 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "asv_interfaces/msg/obstacle_list.hpp"
+#include "asv_interfaces/msg/spline.hpp"
+#include "asv_interfaces/msg/spline_params.hpp"
 #include "asv_interfaces/msg/state.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -92,13 +94,8 @@ private:
       obs_prediction_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr
+  rclcpp::Subscription<asv_interfaces::msg::SplineParams>::SharedPtr
       spline_params_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr spline_t_sub_,
-      spline_t_la_sub_;
-  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr
-      la_marker_sub_;
-
   rclcpp::Subscription<asv_interfaces::msg::ObstacleList>::SharedPtr
       obstacle_list_sub_;
 
@@ -490,6 +487,15 @@ private:
     obs_prediction_pub_->publish(marker);
   }
 
+  Eigen::Vector2d eval_spline(const asv_interfaces::msg::Spline &sx,
+                              const asv_interfaces::msg::Spline &sy, double t) {
+    // Catmull-Rom cubic: a*t^3 + b*t^2 + c*t + d
+    auto eval = [&](const asv_interfaces::msg::Spline &s) {
+      return s.a * t * t * t + s.b * t * t + s.c * t + s.d;
+    };
+    return {eval(sx), eval(sy)};
+  }
+
   void init_parameters() {
     this->declare_parameter("mpc_tf", mpc_tf);
     mpc_tf = this->get_parameter("mpc_tf").as_double();
@@ -525,43 +531,43 @@ private:
           x0[5] = msg.twist.twist.angular.z;
         });
 
-    spline_t_la_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-        "/mpc/spline_t_la", 10, [this](const std_msgs::msg::Float64 &msg) {
-          ocp_params[N_SP + N_WP] = msg.data;
-        });
-
-    la_marker_sub_ = this->create_subscription<visualization_msgs::msg::Marker>(
-        "/lookahead_marker", 10,
-        [this](const visualization_msgs::msg::Marker &msg) {
-          Eigen::Vector2d la_pos;
-          la_pos << msg.pose.position.x, msg.pose.position.y;
-          along_e = distance(la_pos, asv);
-        });
-
-    spline_t_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-        "/mpc/spline_t", 10, [this](const std_msgs::msg::Float64 &msg) {
-          s_t = fmod(msg.data, 1.0);
-          x0[6] = msg.data;
-          ocp_params[N_SP + N_WP + 2] = ceil(msg.data);
-          cross_e = get_crosstrack_e();
-        });
-
     spline_params_sub_ =
-        this->create_subscription<std_msgs::msg::Float64MultiArray>(
+        this->create_subscription<asv_interfaces::msg::SplineParams>(
             "/mpc/spline_params", 10,
-            [this](const std_msgs::msg::Float64MultiArray &msg) {
-              bool in_last_spline = true;
-              for (int i = 0; i < 8; i++) {
-                if (std::fabs(msg.data[i] - msg.data[8 + i]) > 1e-4)
-                  in_last_spline = false;
-              }
-              ocp_params[N_SP + N_WP + 1] = static_cast<int>(in_last_spline);
+            [this](const asv_interfaces::msg::SplineParams &msg) {
+              // Log new spline coefficients
+              auto pack_spline = [&](const asv_interfaces::msg::Spline &s,
+                                     int offset) {
+                ocp_params[offset + 0] = s.a;
+                ocp_params[offset + 1] = s.b;
+                ocp_params[offset + 2] = s.c;
+                ocp_params[offset + 3] = s.d;
+              };
 
-              for (int i = 0; i < N_SP; i++) {
-                if (std::fabs(ocp_params[i] - msg.data[i]) > 1e-6) {
-                  ocp_params[i] = msg.data[i];
-                }
-              }
+              pack_spline(msg.x, 0);
+              pack_spline(msg.y, 4);
+              pack_spline(msg.x_next, 8);
+              pack_spline(msg.y_next, 12);
+
+              // t_la param
+              ocp_params[N_SP + N_WP] = msg.t_la;
+              double t_la_local = fmod(msg.t_la, 1.0);
+              bool la_in_next = (floor(msg.t_la) > floor(msg.t));
+
+              Eigen::Vector2d la_p =
+                  la_in_next ? eval_spline(msg.x_next, msg.y_next, t_la_local)
+                             : eval_spline(msg.x, msg.y, t_la_local);
+              along_e = distance(la_p, asv);
+
+              // at_last_segment param
+              ocp_params[N_SP + N_WP + 1] =
+                  static_cast<int>(msg.at_last_segment);
+
+              // t param
+              s_t = fmod(msg.t, 1.0);
+              x0[6] = msg.t;
+              ocp_params[N_SP + N_WP + 2] = ceil(msg.t);
+              cross_e = get_crosstrack_e();
             });
 
     obstacle_list_sub_ =
@@ -681,8 +687,8 @@ private:
         this->create_publisher<nav_msgs::msg::Path>("/mpc/avo_path", 10);
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
-    ref_pub_ =
-        this->create_publisher<asv_interfaces::msg::State>("/asv/state/ref", 10);
+    ref_pub_ = this->create_publisher<asv_interfaces::msg::State>(
+        "/asv/state/ref", 10);
     debug_ae_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/a_e", 10);
     debug_ce_pub_ =
