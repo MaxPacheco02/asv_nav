@@ -21,6 +21,10 @@ avoidance, cascaded with an Adaptive Integral Terminal Sliding Mode Controller
 7. [Running](#running)
 8. [Analysis tools](#analysis-tools)
 
+<p align="center">
+<img src="./docs/asv.gif" alt="ASV navigation project demo"/>
+</p>
+
 
 ## Repository structure
 
@@ -47,15 +51,15 @@ asv_nav/
 
 Contains all control logic.
 
-| Node / Script           | Language | Description                                                                                                                                                                                                                      |
-| ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mpc_node`              | C++      | Real-time MPC using the ACADOS-generated solver. Runs at 20 Hz. Tracks Catmull-Rom splines with dynamic obstacle avoidance and adaptive weight scheduling.                                                                       |
-| `spline_publisher_node` | C++      | Builds a Catmull-Rom spline chain from incoming waypoints, finds the closest point on the spline to the ASV, and publishes spline parameters, current `t`, and lookahead `t_la` to the MPC.                                      |
-| `aitsmc_node`           | C++      | Low-level controller. Accepts velocity or pose references from the MPC and computes azimuth thruster commands at 100 Hz. Supports two modes: **SSY** (surge/sway/yaw velocity tracking) and **XYH** (x/y/heading pose tracking). |
-| `teleop_xbox_node.py`   | Python   | Xbox controller teleoperation for manual testing.                                                                                                                                                                                |
-| `mpc_gui.py`            | Python   | Live parameter-tuning GUI: adjusts MPC weights and horizon at runtime via ROS parameters.                                                                                                                                        |
-| `asv_mpc.py`            | Python   | Standalone ACADOS OCP setup and closed-loop simulation. Used offline to prototype the MPC and generate C code (`c_generated_code_asv_ocp/`).                                                                                     |
-| `asv_dynamics.py`       | Python   | CasADi symbolic model for the ASV. Exports the `AcadosModel` consumed by `asv_mpc.py`.                                                                                                                                           |
+| Node / Script           | Description                                                                                                                                                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mpc_node`              | Real-time MPC using the ACADOS-generated solver. Runs at 20 Hz. Tracks Catmull-Rom splines with dynamic obstacle avoidance and adaptive weight scheduling.                                                                       |
+| `spline_publisher_node` | Builds a Catmull-Rom spline chain from incoming waypoints, finds the closest point on the spline to the ASV, and publishes spline parameters, current `t`, and lookahead `t_la` to the MPC.                                      |
+| `aitsmc_node`           | Low-level controller. Accepts velocity or pose references from the MPC and computes azimuth thruster commands at 100 Hz. Supports two modes: **SSY** (surge/sway/yaw velocity tracking) and **XYH** (x/y/heading pose tracking). |
+| `teleop_xbox_node.py`   | Xbox controller teleoperation for manual testing.                                                                                                                                                                                |
+| `mpc_gui.py`            | Live parameter-tuning GUI: adjusts MPC weights and horizon at runtime via ROS parameters.                                                                                                                                        |
+| `asv_mpc.py`            | Standalone ACADOS OCP setup and closed-loop simulation. Used offline to prototype the MPC and generate C code (`c_generated_code_asv_ocp/`).                                                                                     |
+| `asv_dynamics.py`       | CasADi symbolic model for the ASV. Exports the `AcadosModel` consumed by `asv_mpc.py`.                                                                                                                                           |
 
 **Launch files**
 
