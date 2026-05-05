@@ -19,30 +19,35 @@ def generate_launch_description():
         package="asv_utils",
         executable="obstacle_publisher",
     )
-    
+
     dynamic_model_node = Node(
         package="asv_control",
         executable="dynamic_model_node",
     )
 
-    aitsmc_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('asv_control'),
-                'launch',
-                'aitsmc_launch.py'
-            ])
-        ]),
+    state_controller_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            [
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("asv_control"),
+                        "launch",
+                        # 'aitsmc_launch.py'
+                        "pid_launch.py",
+                    ]
+                )
+            ]
+        ),
     )
 
     mpc_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('asv_control'),
-                'launch',
-                'mpc_launch.py'
-            ])
-        ]),
+        PythonLaunchDescriptionSource(
+            [
+                PathJoinSubstitution(
+                    [FindPackageShare("asv_control"), "launch", "mpc_launch.py"]
+                )
+            ]
+        ),
     )
 
     return LaunchDescription(
@@ -50,7 +55,7 @@ def generate_launch_description():
             spline_publisher_node,
             obstacle_publisher,
             dynamic_model_node,
-            aitsmc_launch,
+            state_controller_launch,
             mpc_launch,
         ]
     )

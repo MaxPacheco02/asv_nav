@@ -38,6 +38,10 @@ add_executable(aitsmc_node src/aitsmc_node.cpp src/dynamic_model.cpp
 target_include_directories(aitsmc_node PRIVATE include)
 ament_target_dependencies(aitsmc_node ${DEPENDENCIES})
 
+add_executable(pid_node src/pid_node.cpp src/dynamic_model.cpp src/PID.cpp)
+target_include_directories(pid_node PRIVATE include)
+ament_target_dependencies(pid_node ${DEPENDENCIES})
+
 add_executable(dynamic_model_node src/dynamic_model_node.cpp
                                   src/dynamic_model.cpp)
 target_include_directories(dynamic_model_node PRIVATE include)
@@ -52,7 +56,8 @@ ament_target_dependencies(sine_refs_node ${DEPENDENCIES})
 add_executable(rviz_refs_node src/debug/aitsmc/rviz_refs_node.cpp)
 ament_target_dependencies(rviz_refs_node ${DEPENDENCIES})
 
-add_executable(spline_publisher_node src/spline_publisher_node.cpp src/utils/CatmulRom.cpp)
+add_executable(spline_publisher_node src/spline_publisher_node.cpp
+                                     src/utils/CatmulRom.cpp)
 ament_target_dependencies(spline_publisher_node ${DEPENDENCIES})
 
 # ================
@@ -76,7 +81,8 @@ file(GLOB ACADOS_GENERATED_SOURCES
      ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*/*.c)
 list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
 
-add_executable(mpc_node src/mpc_node.cpp src/utils/CatmulRom.cpp ${ACADOS_GENERATED_SOURCES})
+add_executable(mpc_node src/mpc_node.cpp src/utils/CatmulRom.cpp
+                        ${ACADOS_GENERATED_SOURCES})
 ament_target_dependencies(mpc_node ${DEPENDENCIES})
 target_link_libraries(mpc_node acados hpipm blasfeo m)
 
@@ -87,6 +93,7 @@ install(
           sine_refs_node
           rviz_refs_node
           spline_publisher_node
+          pid_node
           mpc_node
   DESTINATION lib/${PROJECT_NAME})
 
