@@ -51,11 +51,9 @@ public:
     timer_ = this->create_wall_timer(50ms, std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = frame_id;
-    avo_path_msg.header.frame_id = frame_id;
     sol_array_msg.header.frame_id = frame_id;
 
     sol_path_msg.poses.resize(N_HORIZON + 1);
-    avo_path_msg.poses.resize(n_points);
     sol_array_msg.poses.resize(sol_array_length);
 
     init_acados_solver();
@@ -85,7 +83,7 @@ private:
   static constexpr int ellipse_points = 50;
 
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
-      obs_path_pub_, avo_path_pub_;
+      obs_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
@@ -111,7 +109,7 @@ private:
   asv_interfaces::msg::State ref_msg;
   std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
       debug_min_d_msg;
-  nav_msgs::msg::Path sol_path_msg, avo_path_msg;
+  nav_msgs::msg::Path sol_path_msg;
   geometry_msgs::msg::PoseArray sol_array_msg;
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
@@ -124,16 +122,21 @@ private:
   // w_avoidance
   std::vector<double> mpc_weights{0.01,  10.0,  100.0, 0.01, 0.1,
                                   100.0, 0.001, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{10.0, 0.1, 10.0, 1.0, 1.0,
-                                        1.0,  1.0, 1.0,  1.0};
-  std::vector<double> avoidance_weights{0.1,   1.0,   1000.0, 0.01,   0.1,
+  std::vector<double> tracking_to_avoid{100.0, 0.1, 10.0, 1.0, 1.0,
+                                        1.0,   1.0, 1.0,  1.0};
+  std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01,   0.1,
                                         100.0, 0.001, 10.0,   75000.0};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 200.0, ae_end = 150.0;
   static constexpr double min_ce = 10.0, max_ce = 120.0;
-  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0,
-                          avoidance_dist = 1500.0;
+  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
+  // Max weight change per 50 ms control cycle. w_avo ramps,
+  // preventing the RTI QP from seeing a discontinuous cost Hessian.
+  static constexpr double max_w_rate = 1000.0;
+  // Re-warmup if an obstacle order is swapped, because their positions are
+  // states, not just OCP params.
+  static constexpr double obs_reorder_threshold = 50.0;
 
   double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
                                          1.0,  1.0,  10.0, 1.0};
@@ -241,7 +244,6 @@ private:
 
     auto stamp = this->get_clock()->now();
     sol_path_msg.header.stamp = stamp;
-    avo_path_msg.header.stamp = stamp;
     sol_array_msg.header.stamp = stamp;
 
     geometry_msgs::msg::PoseStamped tmp_pose, obs_pose;
@@ -321,19 +323,6 @@ private:
       mpc_broken = false;
     }
 
-    // Draw radius circle around ASV for distance aid while adding dynamic
-    // obstacles
-    geometry_msgs::msg::PoseStamped p;
-    p.header.frame_id = frame_id;
-    for (int i = 0; i < n_points; i++) {
-      double angle = 2.0 * M_PI * i / (n_points - 1);
-
-      p.pose.position.x = x0[0] + avoidance_dist * std::cos(angle);
-      p.pose.position.y = x0[1] + avoidance_dist * std::sin(angle);
-      avo_path_msg.poses[i] = p;
-    }
-
-    avo_path_pub_->publish(avo_path_msg);
     ref_pub_->publish(ref_msg);
     debug_ae_pub_->publish(debug_ae_msg);
     debug_ce_pub_->publish(debug_ce_msg);
@@ -547,7 +536,14 @@ private:
               // t param
               s_t = fmod(msg.t, 1.0);
               x0[6] = msg.t;
-              ocp_params[N_SP + N_WP + 2] = ceil(msg.t);
+              double new_ceil = ceil(msg.t);
+              if (new_ceil != ocp_params[N_SP + N_WP + 2]) {
+                // Spline segment changed. Force re-warmup.
+                warmup_count = 0;
+                RCLCPP_WARN(this->get_logger(),
+                            "New spline coefficients. Forcing re-warmup");
+              }
+              ocp_params[N_SP + N_WP + 2] = new_ceil;
               cross_e = get_crosstrack_e();
             });
 
@@ -557,13 +553,43 @@ private:
             [this](const asv_interfaces::msg::ObstacleList &msg) {
               if (static_cast<int>(msg.obs_list.size()) < N_OBS)
                 return;
+
+              bool reorder = false;
               for (int i = 0; i < N_OBS; i++) {
+                double dx = msg.obs_list[i].x - x0[7 + i * 2];
+                double dy = msg.obs_list[i].y - x0[7 + 1 + i * 2];
+                if (std::hypot(dx, dy) > obs_reorder_threshold)
+                  reorder = true;
+
                 x0[7 + i * 2] = msg.obs_list[i].x;
                 x0[7 + 1 + i * 2] = msg.obs_list[i].y;
 
                 int param_idx = N_SP + N_WP + N_AP;
                 ocp_params[param_idx + i * 2] = msg.obs_list[i].v_x;
                 ocp_params[param_idx + 1 + i * 2] = msg.obs_list[i].v_y;
+              }
+
+              if (reorder) {
+                // Keeping the ASV trajectory warm-start.
+                // Only patch the obstacle states in each stage.
+                int param_idx = N_SP + N_WP + N_AP;
+                double stage_x[NX];
+                for (int i = 0; i <= N_HORIZON; i++) {
+                  ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, i, "x",
+                                  stage_x);
+                  for (int j = 0; j < N_OBS; j++) {
+                    double vx = ocp_params[param_idx + j * 2];
+                    double vy = ocp_params[param_idx + 1 + j * 2];
+                    stage_x[7 + j * 2] = x0[7 + j * 2] + vx * DT * i;
+                    stage_x[7 + 1 + j * 2] = x0[7 + 1 + j * 2] + vy * DT * i;
+                  }
+                  ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x",
+                                  stage_x);
+                }
+                warmup_count = 0;
+                RCLCPP_WARN(this->get_logger(),
+                            "Obstacle reorder detected. Patching obstacle "
+                            "states and forcing re-warmup");
               }
             });
 
@@ -664,8 +690,6 @@ private:
         this->create_publisher<nav_msgs::msg::Path>("/mpc/sol_path", 10);
     obs_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/mpc/obs_path", 10);
-    avo_path_pub_ =
-        this->create_publisher<nav_msgs::msg::Path>("/mpc/avo_path", 10);
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
     ref_pub_ = this->create_publisher<asv_interfaces::msg::State>(
@@ -720,9 +744,7 @@ private:
   // Variable weights dependant on crosstrack or alongtrack errors.
   void recompute_weights(double d) {
     double alpha = interpol_at(avoidance_start, avoidance_end, 1.0, 0.0, d);
-    // Path-tracking weights
     for (int i = 0; i < N_WP; i++) {
-      // Get path-tracking weight
       if (i < 3)
         pt_weights[i] = var_w_at(mpc_weights[i], tracking_weights_inputs[i],
                                  tracking_weights_dynamics[i], cross_e);
@@ -730,9 +752,13 @@ private:
         pt_weights[i] = var_w_at(mpc_weights[i], tracking_weights_inputs[i],
                                  tracking_weights_dynamics[i], along_e);
 
-      // Interpolate weights
-      ocp_params[N_SP + i] =
+      double w_target =
           pt_weights[i] * alpha + avoidance_weights[i] * (1 - alpha);
+      double w_prev = ocp_params[N_SP + i];
+      // Rate-limit weight changes to avoid sudden jumps that destabilise the
+      // RTI QP.
+      ocp_params[N_SP + i] =
+          std::clamp(w_target, w_prev - max_w_rate, w_prev + max_w_rate);
     }
   }
 };

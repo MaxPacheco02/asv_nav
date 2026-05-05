@@ -10,3 +10,6 @@ asv_control/scripts/mpc/c_generated_code_*
 *.onnx
 *.deb
 *.whl
+*/metadata.yaml
+*.db3
+debug/
