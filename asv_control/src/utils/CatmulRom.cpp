@@ -26,6 +26,10 @@ void CatmulRom::update(Eigen::Vector2d p0, Eigen::Vector2d p1, Eigen::Vector2d p
     calc_arc_length();
 }
 
+void CatmulRom::set_coeffs(Eigen::Vector2d a, Eigen::Vector2d b, Eigen::Vector2d c, Eigen::Vector2d d) {
+    s_.a = a; s_.b = b; s_.c = c; s_.d = d;
+}
+
 double CatmulRom::distance(Eigen::Vector2d a, Eigen::Vector2d b){
     return sqrt((a(0)-b(0))*(a(0)-b(0))+(a(1)-b(1))*(a(1)-b(1)));
 }

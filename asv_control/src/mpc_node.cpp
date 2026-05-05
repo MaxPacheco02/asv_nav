@@ -6,6 +6,8 @@
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include "utils/CatmulRom.h"
+
 // ACADOS includes
 #include "acados_c/ocp_nlp_interface.h"
 #include "acados_solver_asv_dynamics.h"
@@ -178,6 +180,8 @@ private:
   double simU[NU];
 
   double xtraj[NX * (N_HORIZON + 1)];
+
+  CatmulRom spline_, spline_next_;
 
   double last_theta{0.0};
 
@@ -362,31 +366,13 @@ private:
     return std::clamp(w_m * t + w_b, max_y, min_y);
   }
 
-  double get_crosstrack_e() {
-    Eigen::Vector2d spline_pos;
-    spline_pos = get_spline(s_t);
-    return distance(asv, spline_pos);
-  }
+  double get_crosstrack_e() { return distance(asv, spline_.get_s(s_t)); }
 
   double get_heading_e() {
-    Eigen::Vector2d s_dot;
-    s_dot = get_spline_dot(s_t);
+    Eigen::Vector2d s_dot = spline_.get_s_dot(s_t);
     double psi_ref = std::atan2(s_dot.y(), s_dot.x());
     double he_sqrt = std::sin((x0[2] - psi_ref) / 2.0);
     return he_sqrt * he_sqrt;
-  }
-
-  Eigen::Vector2d get_spline(double t) {
-    return Eigen::Vector2d{ocp_params[0] * t * t * t + ocp_params[1] * t * t +
-                               ocp_params[2] * t + ocp_params[3],
-                           ocp_params[4] * t * t * t + ocp_params[5] * t * t +
-                               ocp_params[6] * t + ocp_params[7]};
-  }
-
-  Eigen::Vector2d get_spline_dot(double t) {
-    return Eigen::Vector2d{
-        3 * ocp_params[0] * t * t + 2 * ocp_params[1] * t + ocp_params[2],
-        3 * ocp_params[4] * t * t + 2 * ocp_params[5] * t + ocp_params[6]};
   }
 
   Eigen::Vector2d get_nearest_obs() {
@@ -487,15 +473,6 @@ private:
     obs_prediction_pub_->publish(marker);
   }
 
-  Eigen::Vector2d eval_spline(const asv_interfaces::msg::Spline &sx,
-                              const asv_interfaces::msg::Spline &sy, double t) {
-    // Catmull-Rom cubic: a*t^3 + b*t^2 + c*t + d
-    auto eval = [&](const asv_interfaces::msg::Spline &s) {
-      return s.a * t * t * t + s.b * t * t + s.c * t + s.d;
-    };
-    return {eval(sx), eval(sy)};
-  }
-
   void init_parameters() {
     this->declare_parameter("mpc_tf", mpc_tf);
     mpc_tf = this->get_parameter("mpc_tf").as_double();
@@ -535,7 +512,6 @@ private:
         this->create_subscription<asv_interfaces::msg::SplineParams>(
             "/mpc/spline_params", 10,
             [this](const asv_interfaces::msg::SplineParams &msg) {
-              // Log new spline coefficients
               auto pack_spline = [&](const asv_interfaces::msg::Spline &s,
                                      int offset) {
                 ocp_params[offset + 0] = s.a;
@@ -549,14 +525,19 @@ private:
               pack_spline(msg.x_next, 8);
               pack_spline(msg.y_next, 12);
 
+              spline_.set_coeffs({msg.x.a, msg.y.a}, {msg.x.b, msg.y.b},
+                                 {msg.x.c, msg.y.c}, {msg.x.d, msg.y.d});
+              spline_next_.set_coeffs(
+                  {msg.x_next.a, msg.y_next.a}, {msg.x_next.b, msg.y_next.b},
+                  {msg.x_next.c, msg.y_next.c}, {msg.x_next.d, msg.y_next.d});
+
               // t_la param
               ocp_params[N_SP + N_WP] = msg.t_la;
               double t_la_local = fmod(msg.t_la, 1.0);
               bool la_in_next = (floor(msg.t_la) > floor(msg.t));
 
-              Eigen::Vector2d la_p =
-                  la_in_next ? eval_spline(msg.x_next, msg.y_next, t_la_local)
-                             : eval_spline(msg.x, msg.y, t_la_local);
+              Eigen::Vector2d la_p = la_in_next ? spline_next_.get_s(t_la_local)
+                                                : spline_.get_s(t_la_local);
               along_e = distance(la_p, asv);
 
               // at_last_segment param

@@ -18,6 +18,7 @@ public:
     CatmulRom();
     CatmulRom(Eigen::Vector2d p0, Eigen::Vector2d p1, Eigen::Vector2d p2, Eigen::Vector2d p3);
     void update(Eigen::Vector2d p0, Eigen::Vector2d p1, Eigen::Vector2d p2, Eigen::Vector2d p3);
+    void set_coeffs(Eigen::Vector2d a, Eigen::Vector2d b, Eigen::Vector2d c, Eigen::Vector2d d);
     Eigen::Vector2d get_s(double t);
     Eigen::Vector2d get_s_dot(double t);
     void calc_arc_length();

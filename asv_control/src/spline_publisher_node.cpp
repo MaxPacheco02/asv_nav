@@ -21,7 +21,7 @@
 
 #include "visualization_msgs/msg/marker.hpp"
 
-#include "utils/CatmulRom.cpp"
+#include "utils/CatmulRom.h"
 
 using namespace std::chrono_literals;
 

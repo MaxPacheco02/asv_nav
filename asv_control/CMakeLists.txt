@@ -52,7 +52,7 @@ ament_target_dependencies(sine_refs_node ${DEPENDENCIES})
 add_executable(rviz_refs_node src/debug/aitsmc/rviz_refs_node.cpp)
 ament_target_dependencies(rviz_refs_node ${DEPENDENCIES})
 
-add_executable(spline_publisher_node src/spline_publisher_node.cpp)
+add_executable(spline_publisher_node src/spline_publisher_node.cpp src/utils/CatmulRom.cpp)
 ament_target_dependencies(spline_publisher_node ${DEPENDENCIES})
 
 # ================
@@ -76,7 +76,7 @@ file(GLOB ACADOS_GENERATED_SOURCES
      ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*/*.c)
 list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
 
-add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
+add_executable(mpc_node src/mpc_node.cpp src/utils/CatmulRom.cpp ${ACADOS_GENERATED_SOURCES})
 ament_target_dependencies(mpc_node ${DEPENDENCIES})
 target_link_libraries(mpc_node acados hpipm blasfeo m)
 
