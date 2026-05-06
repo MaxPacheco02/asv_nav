@@ -45,7 +45,7 @@ public:
         });
 
     reference_sub_ = this->create_subscription<asv_interfaces::msg::State>(
-        "asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
+        "/asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
           asv_d.x = 0;
           asv_d.y = 0;
           asv_d.psi = 0;
@@ -79,11 +79,11 @@ public:
     ref_pose_msg.header.frame_id = "world";
 
     debug_pubs_ = {this->create_publisher<asv_interfaces::msg::PidDebug>(
-                       "pid/debug/x", 10),
+                       "/pid/debug/u", 10),
                    this->create_publisher<asv_interfaces::msg::PidDebug>(
-                       "pid/debug/y", 10),
+                       "/pid/debug/v", 10),
                    this->create_publisher<asv_interfaces::msg::PidDebug>(
-                       "pid/debug/psi", 10)};
+                       "/pid/debug/r", 10)};
   }
 
 protected:
@@ -140,7 +140,8 @@ private:
       this->declare_parameter(name, 0.0);
       return this->get_parameter(name).as_double();
     };
-    return PIDStateParams{get("p_" + axis), get("i_" + axis), get("d_" + axis), get("i_max_" + axis)};
+    return PIDStateParams{get("p_" + axis), get("i_" + axis), get("d_" + axis),
+                          get("i_max_" + axis), get("d_alpha_" + axis)};
   }
 
   PIDParams initialize_pid_params() {

@@ -56,7 +56,7 @@ public:
         });
 
     reference_sub_ = this->create_subscription<asv_interfaces::msg::State>(
-        "asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
+        "/asv/state/ref", 10, [this](const asv_interfaces::msg::State &msg) {
           if (mode_ == ControlMode::XYH) {
             if (std::abs(pow(msg.x - asv_d.x, 2) + pow(msg.y - asv_d.y, 2)) >
                 30.0)
@@ -105,11 +105,11 @@ public:
     ref_pose_msg.header.frame_id = "world";
 
     debug_pubs_ = {this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
-                       "aitsmc/debug/x", 10),
+                       "/aitsmc/debug/u", 10),
                    this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
-                       "aitsmc/debug/y", 10),
+                       "/aitsmc/debug/v", 10),
                    this->create_publisher<asv_interfaces::msg::AitsmcDebug>(
-                       "aitsmc/debug/psi", 10)};
+                       "/aitsmc/debug/r", 10)};
   }
 
 protected:

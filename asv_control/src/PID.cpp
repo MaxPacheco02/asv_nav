@@ -7,6 +7,7 @@ PID::PID(const PIDParams &params) : p(params) {
   kI << p.u.i, p.v.i, p.r.i;
   kD << p.u.d, p.v.d, p.r.d;
   kI_max << p.u.i_max, p.v.i_max, p.r.i_max;
+  kD_alpha << p.u.d_alpha, p.v.d_alpha, p.r.d_alpha;
 }
 
 double PID::normalize_angle(double angle_in) {
@@ -49,13 +50,17 @@ Azimuth PID::update(const State &state, const State &setpoint) {
 
   if (!initialized) {
     err_last = err;
+    nu_last = nu;
     initialized = true;
   }
 
   err_i += (err + err_last) / 2 * integral_step;
   err_i = err_i.cwiseMin(kI_max).cwiseMax(-kI_max);
-  Eigen::Vector3d err_d = (err - err_last) / integral_step;
+  Eigen::Vector3d err_d_raw = -(nu - nu_last) / integral_step;
+  Eigen::Vector3d err_d = err_d_last + kD_alpha.cwiseProduct(err_d_raw - err_d_last);
+  err_d_last = err_d;
   err_last = err;
+  nu_last = nu;
 
   // AUXLIARY CONTROL
   Eigen::Vector3d U_aux =
@@ -65,7 +70,7 @@ Azimuth PID::update(const State &state, const State &setpoint) {
   DecomposedDyn dyn = model.get_decomposed_dyn(nu);
 
   // CONTROL SIGNAL
-  Eigen::Vector3d U = dyn.g_inv * (-dyn.f + U_aux);
+  Eigen::Vector3d U = dyn.g_inv * (-dyn.f + nu_dot_d + U_aux);
 
   // ALLOCATE FORCES
   Azimuth out;

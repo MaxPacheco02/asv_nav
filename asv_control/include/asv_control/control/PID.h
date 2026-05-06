@@ -9,7 +9,7 @@
 #include <iostream>
 
 struct PIDStateParams {
-  double p, i, d, i_max;
+  double p, i, d, i_max, d_alpha;
 };
 
 struct PIDDebugData {
@@ -41,7 +41,9 @@ private:
   bool initialized{false};
   Eigen::Vector3d err_i{Eigen::Vector3d::Zero()};
   Eigen::Vector3d err_last{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d kP, kI, kD, kI_max;
+  Eigen::Vector3d nu_last{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d err_d_last{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d kP, kI, kD, kI_max, kD_alpha;
 
   std::array<PIDDebugData, 3> debugData;
   DynamicModel model;

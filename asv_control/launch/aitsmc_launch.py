@@ -10,7 +10,6 @@ def generate_launch_description():
         # output="screen",
         # emulate_tty=True,
         # arguments=[("__log_level:=debug")],
-        
         parameters=[
             # For pose control:
             # {"beta_x": 0.3},
