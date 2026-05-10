@@ -1,4 +1,4 @@
-#include "CatmulRom.h"
+#include "asv_control/utils/CatmulRom.h"
 
 CatmulRom::CatmulRom(){
     alpha_ = 1.0;

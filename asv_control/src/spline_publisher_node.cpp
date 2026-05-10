@@ -20,8 +20,9 @@
 #include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
-#include "utils/CatmulRom.h"
+#include "asv_control/utils/CatmulRom.h"
 
 using namespace std::chrono_literals;
 
@@ -29,6 +30,24 @@ class SplinePublisherNode : public rclcpp::Node {
 public:
   SplinePublisherNode() : Node("spline_publisher_node") {
     using namespace std::placeholders;
+
+    // Declare and read the closed-loop parameter
+    this->declare_parameter<bool>("closed", false);
+    closed_ = this->get_parameter("closed").as_bool();
+
+    this->declare_parameter<double>("marker_scale", 1.0);
+    marker_scale_ = this->get_parameter("marker_scale").as_double();
+    this->declare_parameter<double>("lookahead", 300.0);
+    lookahead = this->get_parameter("lookahead").as_double();
+
+    this->declare_parameter<std::vector<double>>("waypoints",
+                                                 std::vector<double>{});
+    auto wp_flat = this->get_parameter("waypoints").as_double_array();
+    if (wp_flat.size() >= 4 && wp_flat.size() % 2 == 0) {
+      ref.clear();
+      for (size_t i = 0; i + 1 < wp_flat.size(); i += 2)
+        ref.push_back({wp_flat[i], wp_flat[i + 1]});
+    }
 
     spline_path_pub_ =
         this->create_publisher<nav_msgs::msg::Path>("/asv/path_ref", 10);
@@ -41,6 +60,12 @@ public:
     spline_params_pub_ =
         this->create_publisher<asv_interfaces::msg::SplineParams>(
             "/mpc/spline_params", 10);
+    waypoint_labels_pub_ =
+        this->create_publisher<visualization_msgs::msg::MarkerArray>(
+            "/waypoint_labels", 10);
+    waypoint_debug_pub_ =
+        this->create_publisher<std_msgs::msg::Float64MultiArray>(
+            "/debug/spline_wps", 10);
 
     // Goal from mission_handler node
     mission_goal_sub_ =
@@ -61,9 +86,11 @@ public:
                   ref.clear();
                   for (size_t i = 0; i < msg->poses.size(); i++)
                     ref.push_back(trans(p_to_v(msg->poses[i]), 0.0));
-                  ref.push_back(trans(p_to_v(msg->poses.back()), dist));
-                  dummy_ref_ = trans(p_to_v(msg->poses.back()), 2 * dist);
-                  // don't reset closest_idx here
+                  if (!closed_) {
+                    ref.push_back(trans(p_to_v(msg->poses.back()), dist));
+                    dummy_ref_ = trans(p_to_v(msg->poses.back()), 2 * dist);
+                  }
+                  // don't reset closest_idx or lap_ here
                   update_spline_params();
                   return;
                 }
@@ -73,13 +100,17 @@ public:
               last_goal_x_ = last.position.x;
               last_goal_y_ = last.position.y;
               ref.clear();
-              ref.push_back(trans(p_to_v(msg->poses[0]), -dist));
+              if (!closed_)
+                ref.push_back(trans(p_to_v(msg->poses[0]), -dist));
               for (size_t i = 0; i < msg->poses.size(); i++)
                 ref.push_back(trans(p_to_v(msg->poses[i]), 0.0));
-              ref.push_back(trans(p_to_v(msg->poses.back()), dist));
-              dummy_ref_ = trans(p_to_v(msg->poses.back()), 2 * dist);
+              if (!closed_) {
+                ref.push_back(trans(p_to_v(msg->poses.back()), dist));
+                dummy_ref_ = trans(p_to_v(msg->poses.back()), 2 * dist);
+              }
               closest_idx = 0;
               last_idx = -1;
+              lap_ = 0;
               update_spline_params();
             });
 
@@ -99,7 +130,9 @@ public:
         "/goal_pose", 1,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
           ref.clear();
-          ref.push_back(trans(asv, -dist));
+          if (!closed_) {
+            ref.push_back(trans(asv, -dist));
+          }
           ref.push_back(trans(asv, 0.0));
 
           auto &q = msg->pose.orientation;
@@ -108,9 +141,14 @@ public:
           tmp.z() = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
                                1.0 - 2.0 * (q.y * q.y + q.z * q.z));
           ref.push_back(trans(tmp, 0.0));
-          ref.push_back(trans(tmp, dist));
-          dummy_ref_ = trans(tmp, 2 * dist);
+          if (!closed_) {
+            ref.push_back(trans(tmp, dist));
+            dummy_ref_ = trans(tmp, 2 * dist);
+          }
 
+          lap_ = 0;
+          closest_idx = 0;
+          last_idx = -1;
           update_spline_params();
         });
 
@@ -123,9 +161,13 @@ public:
               tmp.y() = msg->pose.position.y;
               tmp.z() = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
                                    1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-              ref[ref.size() - 1] = trans(tmp, 0.0);
-              ref.push_back(trans(tmp, dist));
-              dummy_ref_ = trans(tmp, 2 * dist);
+              if (closed_) {
+                ref.push_back(trans(tmp, 0.0));
+              } else {
+                ref[ref.size() - 1] = trans(tmp, 0.0);
+                ref.push_back(trans(tmp, dist));
+                dummy_ref_ = trans(tmp, 2 * dist);
+              }
 
               update_spline_params();
             });
@@ -140,10 +182,15 @@ public:
               tmp.y() = msg->pose.position.y;
               tmp.z() = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
                                    1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-              ref.push_back(trans(tmp, -dist));
+              if (!closed_)
+                ref.push_back(trans(tmp, -dist));
               ref.push_back(trans(tmp, 0.0));
-              ref.push_back(trans(tmp, dist));
+              if (!closed_)
+                ref.push_back(trans(tmp, dist));
 
+              lap_ = 0;
+              closest_idx = 0;
+              last_idx = -1;
               update_spline_params();
             });
 
@@ -156,9 +203,10 @@ public:
     s_marker_msg.id = 0;
     s_marker_msg.type = visualization_msgs::msg::Marker::SPHERE;
     s_marker_msg.action = 0;
-    s_marker_msg.scale =
-        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(5.0).y(5.0).z(
-            5.0);
+    s_marker_msg.scale = geometry_msgs::build<geometry_msgs::msg::Vector3>()
+                             .x(5.0 * marker_scale_)
+                             .y(5.0 * marker_scale_)
+                             .z(5.0 * marker_scale_);
     s_marker_msg.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(0).g(0).b(1).a(1);
 
@@ -166,9 +214,10 @@ public:
     la_marker_msg.id = 0;
     la_marker_msg.type = visualization_msgs::msg::Marker::SPHERE;
     la_marker_msg.action = 0;
-    la_marker_msg.scale =
-        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(5.0).y(5.0).z(
-            5.0);
+    la_marker_msg.scale = geometry_msgs::build<geometry_msgs::msg::Vector3>()
+                              .x(5.0 * marker_scale_)
+                              .y(5.0 * marker_scale_)
+                              .z(5.0 * marker_scale_);
     la_marker_msg.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(1).g(0).b(0).a(1);
 
@@ -186,19 +235,18 @@ protected:
     la_marker_msg.header = path_msg.header;
 
     if (s_.size() > 0) {
-      // if (closest_idx < 0) closest_idx = 0;
       Eigen::Vector2d tmp_v;
       Eigen::Vector2d closest_p_tmp, closest_p;
-      double closest_t, closest_t_tmp;
+      double closest_t = 0.0, closest_t_tmp;
       double closest_dist = std::numeric_limits<double>::max();
+      int N = static_cast<int>(s_.size());
 
-      for (int i = 0; i < static_cast<int>(s_.size()); i++) {
+      for (int i = 0; i < N; i++) {
 
         for (double t = 0; t <= 1; t += 1.0 / (n_ - 1)) {
           tmp_v = s_[i].get_s(t);
           tmp_pose.pose.position.x = tmp_v.x();
           tmp_pose.pose.position.y = tmp_v.y();
-          // tmp_pose.pose.position.z = i + t;
           tmp_pose.pose.position.z = 0;
           path_msg.poses.push_back(tmp_pose);
         }
@@ -206,30 +254,50 @@ protected:
         closest_t_tmp = s_[i].closest_t(asv);
         closest_p_tmp = s_[i].get_s(closest_t_tmp);
 
-        if (distance(asv, closest_p_tmp) < closest_dist &&
-            abs(i - closest_idx) <= 1) {
+        // Neighbor check: in closed mode, allow wraparound (N-1 ↔ 0)
+        int diff = std::abs(i - closest_idx);
+        int neighbor_dist = closed_ ? std::min(diff, N - diff) : diff;
+
+        if (distance(asv, closest_p_tmp) < closest_dist && neighbor_dist <= 1) {
           closest_t = closest_t_tmp;
           closest_dist = distance(asv, closest_p_tmp);
           closest_idx = i;
         }
       }
 
+      // Detect lap transitions across the seam (only in closed mode)
+      if (closed_ && last_idx >= 0) {
+        if (last_idx == N - 1 && closest_idx == 0) {
+          lap_++;
+        } else if (last_idx == 0 && closest_idx == N - 1) {
+          lap_--; // backwards across the seam
+        }
+      }
+
       closest_p = s_[closest_idx].get_s(closest_t);
 
-      double lookahead = 300.0;
       // For length L, we want to find a t+dt such that s(t+dt) is at [dist]
-      // from s(t) To map L to dist: L is to 1, what dist is to dt -> dt =
+      // from s(t). To map L to dist: L is to 1, what dist is to dt -> dt =
       // dist/L
       L_ = s_[closest_idx].L_;
       double la_t = s_[closest_idx].get_la(closest_t, lookahead);
       Eigen::Vector2d la_p = s_[closest_idx].get_s(la_t);
-      if (la_t == 1.0 && closest_idx + 1 < static_cast<int>(s_.size())) {
+
+      bool la_wrapped = false;
+      int la_next_idx = closest_idx;
+      double la_frac = la_t;
+
+      if (la_t == 1.0 && (closed_ || closest_idx + 1 < N)) {
         // la_t is most likely saturated and there still are splines left to
-        // cover
+        // cover (or we wrap around in closed mode)
+        la_next_idx = closed_ ? (closest_idx + 1) % N : closest_idx + 1;
         double rem_dist =
             lookahead - s_[closest_idx].get_arc_length(closest_t, la_t);
-        la_t = 1 + s_[closest_idx + 1].get_la(0.0, rem_dist);
-        la_p = s_[closest_idx + 1].get_s(la_t - 1);
+        double next_la_t = s_[la_next_idx].get_la(0.0, rem_dist);
+        la_t = 1 + next_la_t;
+        la_p = s_[la_next_idx].get_s(next_la_t);
+        la_frac = next_la_t;
+        la_wrapped = true;
       }
 
       s_marker_msg.pose.position.x = closest_p.x();
@@ -238,15 +306,33 @@ protected:
       la_marker_msg.pose.position.x = la_p.x();
       la_marker_msg.pose.position.y = la_p.y();
 
-      spline_params_msg.t = closest_idx + closest_t;
-      spline_params_msg.t_la = closest_idx + la_t;
+      // Emit monotonically-increasing t in closed mode
+      if (closed_) {
+        spline_params_msg.t = lap_ * N + closest_idx + closest_t;
+
+        if (la_wrapped) {
+          // If the lookahead crossed the seam (i.e. wrapped from N-1 to 0),
+          // it belongs to the next lap
+          int la_lap = lap_ + ((la_next_idx < closest_idx) ? 1 : 0);
+          spline_params_msg.t_la = la_lap * N + la_next_idx + la_frac;
+        } else {
+          spline_params_msg.t_la = lap_ * N + closest_idx + la_t;
+        }
+      } else {
+        spline_params_msg.t = closest_idx + closest_t;
+        spline_params_msg.t_la = closest_idx + la_t;
+      }
 
       if (last_idx != closest_idx) {
         spline_params_msg.x = to_spline_msg(s_[closest_idx].s_, 0);
         spline_params_msg.y = to_spline_msg(s_[closest_idx].s_, 1);
 
-        // If there is a 'next spline', update it!
-        if (closest_idx + 1 < static_cast<int>(s_.size())) {
+        // Next-spline lookup with wraparound in closed mode
+        if (closed_) {
+          int next_idx = (closest_idx + 1) % N;
+          spline_params_msg.x_next = to_spline_msg(s_[next_idx].s_, 0);
+          spline_params_msg.y_next = to_spline_msg(s_[next_idx].s_, 1);
+        } else if (closest_idx + 1 < N) {
           spline_params_msg.x_next = to_spline_msg(s_[closest_idx + 1].s_, 0);
           spline_params_msg.y_next = to_spline_msg(s_[closest_idx + 1].s_, 1);
         } else {
@@ -259,15 +345,45 @@ protected:
 
       spline_params_msg.length = L_;
 
+      // at_last_segment is meaningless in closed mode
       spline_params_msg.at_last_segment =
-          (closest_idx >= static_cast<int>(s_.size()) - 1);
+          closed_ ? false : (closest_idx >= N - 1);
     }
 
-    if (spline_params_msg.t_la == s_.size()) {
-      spline_params_msg.t_la -= 0.001;
+    // These saturation guards only apply in open mode — in closed mode, t can
+    // legitimately exceed s_.size() because of the lap counter
+    if (!closed_) {
+      if (spline_params_msg.t_la == s_.size()) {
+        spline_params_msg.t_la -= 0.001;
+      }
+      if (spline_params_msg.t == s_.size()) {
+        spline_params_msg.t -= 0.001;
+      }
     }
-    if (spline_params_msg.t == s_.size()) {
-      spline_params_msg.t -= 0.001;
+
+    visualization_msgs::msg::MarkerArray label_array;
+    for (size_t i = 0; i < ref.size(); i++) {
+      visualization_msgs::msg::Marker m;
+      m.header = path_msg.header;
+      m.ns = "waypoints";
+      m.id = static_cast<int>(i);
+      m.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.pose.position.x = ref[i].x();
+      m.pose.position.y = ref[i].y();
+      m.pose.position.z = 2.0;
+      m.pose.orientation.w = 1.0;
+      m.scale.z = 5.0 * marker_scale_;
+      m.color = std_msgs::build<std_msgs::msg::ColorRGBA>().r(1).g(1).b(0).a(1);
+      m.text = std::to_string(i);
+      m.lifetime = rclcpp::Duration::from_seconds(0.15);
+      label_array.markers.push_back(m);
+    }
+
+    std_msgs::msg::Float64MultiArray wp_debug_msg;
+    for (const auto &wp : ref) {
+      wp_debug_msg.data.push_back(wp.x());
+      wp_debug_msg.data.push_back(wp.y());
     }
 
     spline_path_pub_->publish(path_msg);
@@ -275,20 +391,35 @@ protected:
     s_marker_pub_->publish(s_marker_msg);
     la_marker_pub_->publish(la_marker_msg);
     spline_params_pub_->publish(spline_params_msg);
+    waypoint_labels_pub_->publish(label_array);
+    waypoint_debug_pub_->publish(wp_debug_msg);
   }
 
   void update_spline_params() {
     s_.clear();
-    if (ref.size() < 4)
-      return;
-    s_.resize(ref.size() - 3);
-    for (size_t i = 0; i < s_.size(); i++) {
-      s_[i].update(ref[i], ref[i + 1], ref[i + 2], ref[i + 3]);
+
+    if (closed_) {
+      if (ref.size() < 3)
+        return;
+      size_t N = ref.size();
+      s_.resize(N); // one segment per waypoint, looping back to the start
+      for (size_t i = 0; i < N; i++) {
+        s_[i].update(ref[(i + N - 1) % N], ref[i], ref[(i + 1) % N],
+                     ref[(i + 2) % N]);
+      }
+      // dummy_s_ isn't really meaningful in closed mode, but keep it valid
+      // (it gets used as the visual "preview" path)
+      dummy_s_.update(ref[N - 1], ref[0], ref[1], ref[2]);
+    } else {
+      if (ref.size() < 4)
+        return;
+      s_.resize(ref.size() - 3);
+      for (size_t i = 0; i < s_.size(); i++) {
+        s_[i].update(ref[i], ref[i + 1], ref[i + 2], ref[i + 3]);
+      }
+      int i = ref.size() - 3;
+      dummy_s_.update(ref[i], ref[i + 1], ref[i + 2], dummy_ref_);
     }
-
-    int i = ref.size() - 3;
-
-    dummy_s_.update(ref[i], ref[i + 1], ref[i + 2], dummy_ref_);
 
     update_dummy_msg();
   }
@@ -312,6 +443,10 @@ private:
       la_marker_pub_;
   rclcpp::Publisher<asv_interfaces::msg::SplineParams>::SharedPtr
       spline_params_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      waypoint_labels_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+      waypoint_debug_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
@@ -333,14 +468,15 @@ private:
   double L_{0.0};
   int n_{20};
   double dist{0.1};
+  double marker_scale_{1.0};
   int closest_idx{-1};
   int last_idx{-1};
+  int lap_{0};
+  bool closed_{false};
+  double lookahead = 300.0;
 
   std::vector<Eigen::Vector2d> ref{{-10, 0},     {-5, 0},     {500, 200},
                                    {1300, -200}, {1900, 200}, {2500, -200}};
-  // std::vector<Eigen::Vector2d>
-  // ref{{0,0},{0.3,0},{3,5},{7,0},{6,-5},{7,-8},{1,-5},{0.5,-1},{0,-1}};
-  // std::vector<Eigen::Vector2d> ref{};
   Eigen::Vector3d asv, tmp;
 
   double last_goal_x_{std::numeric_limits<double>::quiet_NaN()};

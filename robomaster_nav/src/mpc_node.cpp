@@ -10,7 +10,7 @@
 
 // ACADOS includes
 #include "acados_c/ocp_nlp_interface.h"
-#include "acados_solver_asv_dynamics.h"
+#include "acados_solver_robomaster_dynamics.h"
 
 // ROS deps
 #include "rclcpp/rclcpp.hpp"
@@ -29,9 +29,9 @@
 #include "std_srvs/srv/empty.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
-#define NX ASV_DYNAMICS_NX
-#define NU ASV_DYNAMICS_NU
-#define NP ASV_DYNAMICS_NP
+#define NX ROBOMASTER_DYNAMICS_NX
+#define NU ROBOMASTER_DYNAMICS_NU
+#define NP ROBOMASTER_DYNAMICS_NP
 
 struct WeightParams {
   double min_t, max_t;
@@ -63,14 +63,14 @@ public:
 
   ~MPCNode() {
     // === CLEANUP ===
-    asv_dynamics_acados_free(ocp_capsule);
-    asv_dynamics_acados_free_capsule(ocp_capsule);
+    robomaster_dynamics_acados_free(ocp_capsule);
+    robomaster_dynamics_acados_free_capsule(ocp_capsule);
   }
 
 private:
-  static constexpr double TF = 100.0; // seconds
+  static constexpr double TF = 2.5; // seconds
   static constexpr int N_HORIZON =
-      ASV_DYNAMICS_N; // Assuming this macro comes from ACADOS
+      ROBOMASTER_DYNAMICS_N; // Assuming this macro comes from ACADOS
   static constexpr double DT = TF / N_HORIZON;
   static constexpr int N_OBS = 3;
   static constexpr int N_SP = 16; // Spline params (4 x 2 NDIMS x 2 splines)
@@ -114,7 +114,9 @@ private:
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95};
+  // Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95}; // Filtering parameters for ASV.
+  Eigen::Vector3d nu_alpha{0.5, 0.5,
+                           0.5}; // Filtering parameters for RoboMaster S1.
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
@@ -124,16 +126,16 @@ private:
                                   100.0, 0.001, 10.0,  0.0};
   std::vector<double> tracking_to_avoid{100.0, 0.1, 10.0, 1.0, 1.0,
                                         1.0,   1.0, 1.0,  1.0};
-  std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01,   0.1,
-                                        100.0, 0.001, 10.0,   75000.0};
+  std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01, 0.1,
+                                        100.0, 0.001, 10.0,   10.0};
 
   // map input [min,max] to output [min,max]
-  static constexpr double ae_start = 200.0, ae_end = 150.0;
-  static constexpr double min_ce = 10.0, max_ce = 120.0;
-  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
+  static constexpr double ae_start = 0.30, ae_end = 0.2;
+  static constexpr double min_ce = 0.5, max_ce = 2.0;
+  static constexpr double avoidance_start = 2.0, avoidance_end = 1.50;
   // Max weight change per 50 ms control cycle. w_avo ramps,
   // preventing the RTI QP from seeing a discontinuous cost Hessian.
-  static constexpr double max_w_rate = 1000.0;
+  static constexpr double max_w_rate = 1.0;
   // Re-warmup if an obstacle order is swapped, because their positions are
   // states, not just OCP params.
   static constexpr double obs_reorder_threshold = 50.0;
@@ -162,8 +164,8 @@ private:
   double mpc_tf{TF}, s_t{0.0};
   bool mpc_enabled{false};
   bool mpc_broken{false};
-  Eigen::Vector3d asv_breakdown;
-  Eigen::Vector2d asv, nearest_obs;
+  Eigen::Vector3d robomaster_breakdown;
+  Eigen::Vector2d robomaster, nearest_obs;
   double obs_predicted_d{std::numeric_limits<double>::max()};
 
   rclcpp::TimerBase::SharedPtr timer_;
@@ -172,7 +174,7 @@ private:
   double pt_weights[N_WP];
   double x0[NX];
 
-  asv_dynamics_solver_capsule *ocp_capsule;
+  robomaster_dynamics_solver_capsule *ocp_capsule;
   ocp_nlp_config *nlp_config;
   ocp_nlp_dims *nlp_dims;
   ocp_nlp_in *nlp_in;
@@ -190,7 +192,7 @@ private:
 
   void update_all_params() {
     for (int i = 0; i <= N_HORIZON; i++) {
-      asv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
+      robomaster_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
     }
   }
 
@@ -216,14 +218,14 @@ private:
       int rti_phase = 0;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = robomaster_dynamics_acados_solve(ocp_capsule);
       warmup_count++;
     } else {
       // Normal RTI: preparation then feedback
       int rti_phase = 1;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = robomaster_dynamics_acados_solve(ocp_capsule);
 
       if (status != 0 && status != 2 && status != 5) {
         RCLCPP_WARN(this->get_logger(), "Preparation phase returned status %d",
@@ -233,7 +235,7 @@ private:
       rti_phase = 2;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = robomaster_dynamics_acados_solve(ocp_capsule);
     }
 
     // Get optimal control
@@ -299,14 +301,15 @@ private:
     sol_array_pub_->publish(sol_array_msg);
 
     if (!mpc_enabled || status == 4) {
-      RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED");
+      RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED (status=%d)", status);
+
       if (!mpc_broken) {
         mpc_broken = true;
-        asv_breakdown << x0[0], x0[1], x0[2];
+        robomaster_breakdown << x0[0], x0[1], x0[2];
       }
-      ref_msg.x = asv_breakdown(0);
-      ref_msg.y = asv_breakdown(1);
-      ref_msg.psi = asv_breakdown(2);
+      ref_msg.x = robomaster_breakdown(0);
+      ref_msg.y = robomaster_breakdown(1);
+      ref_msg.psi = robomaster_breakdown(2);
       ref_msg.u = 0.0;
       ref_msg.v = 0.0;
       ref_msg.r = 0.0;
@@ -355,7 +358,7 @@ private:
     return std::clamp(w_m * t + w_b, max_y, min_y);
   }
 
-  double get_crosstrack_e() { return distance(asv, spline_.get_s(s_t)); }
+  double get_crosstrack_e() { return distance(robomaster, spline_.get_s(s_t)); }
 
   double get_heading_e() {
     Eigen::Vector2d s_dot = spline_.get_s_dot(s_t);
@@ -369,9 +372,9 @@ private:
     Eigen::Vector2d out, tmp;
     for (int i = 0; i < N_OBS; i++) {
       tmp << x0[7 + i * 2], x0[8 + i * 2];
-      if (distance(asv, tmp) < min_dist) {
+      if (distance(robomaster, tmp) < min_dist) {
         out = tmp;
-        min_dist = distance(asv, tmp);
+        min_dist = distance(robomaster, tmp);
       }
     }
     return out;
@@ -393,7 +396,8 @@ private:
              (Eigen::Vector3d::Ones() - nu_alpha).cwiseProduct(new_sol);
   }
 
-  void publish_ellipse_marker(double asv_x, double asv_y, double asv_psi) {
+  void publish_ellipse_marker(double robomaster_x, double robomaster_y,
+                              double robomaster_psi) {
     visualization_msgs::msg::Marker marker;
     marker.header.frame_id = frame_id;
     marker.header.stamp = this->now();
@@ -403,28 +407,30 @@ private:
     marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Line thickness and color (Bright Red)
-    marker.scale.x = 1.0;
+    marker.scale.x = 0.01;
     marker.color.r = 1.0;
     marker.color.g = 0.0;
     marker.color.b = 0.0;
     marker.color.a = 0.5;
 
     // Effective dimensions from Python script
-    double A_ELL_EFF = 95.0; // 65.0 length + safety radius
-    double B_ELL_EFF = 50.0; // 20.0 width + safety radius
+    double A_ELL_EFF = 0.5; // 0.2 length + safety radius
+    double B_ELL_EFF = 0.5; // 0.2 width + safety radius
 
     for (int i = 0; i <= ellipse_points; i++) {
       // Calculate the angle for this point
       double theta = static_cast<double>(i) / ellipse_points * 2.0 * M_PI;
 
-      // 1. Point in local ASV frame
+      // 1. Point in local ROBOMASTER frame
       double lx = A_ELL_EFF * std::cos(theta);
       double ly = B_ELL_EFF * std::sin(theta);
 
       // 2. Rotate to global heading and translate to global position
       geometry_msgs::msg::Point p;
-      p.x = asv_x + (lx * std::cos(asv_psi) - ly * std::sin(asv_psi));
-      p.y = asv_y + (lx * std::sin(asv_psi) + ly * std::cos(asv_psi));
+      p.x = robomaster_x +
+            (lx * std::cos(robomaster_psi) - ly * std::sin(robomaster_psi));
+      p.y = robomaster_y +
+            (lx * std::sin(robomaster_psi) + ly * std::cos(robomaster_psi));
       p.z = 0.0; // Keep it flat on the water
 
       marker.points.push_back(p);
@@ -478,7 +484,7 @@ private:
 
           x0[0] = msg.pose.pose.position.x;
           x0[1] = msg.pose.pose.position.y;
-          asv << x0[0], x0[1];
+          robomaster << x0[0], x0[1];
 
           // Feed continuous heading to MPC (remove angle wrapping)
           double new_psi = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
@@ -527,7 +533,7 @@ private:
 
               Eigen::Vector2d la_p = la_in_next ? spline_next_.get_s(t_la_local)
                                                 : spline_.get_s(t_la_local);
-              along_e = distance(la_p, asv);
+              along_e = distance(la_p, robomaster);
 
               // at_last_segment param
               ocp_params[N_SP + N_WP + 1] =
@@ -570,7 +576,7 @@ private:
               }
 
               if (reorder) {
-                // Keeping the ASV trajectory warm-start.
+                // Keeping the ROBOMASTER trajectory warm-start.
                 // Only patch the obstacle states in each stage.
                 int param_idx = N_SP + N_WP + N_AP;
                 double stage_x[NX];
@@ -600,7 +606,7 @@ private:
           RCLCPP_WARN(this->get_logger(), "UNBLOCKING MPC - Resetting solver");
 
           // Reset solver state
-          asv_dynamics_acados_reset(ocp_capsule, 1);
+          robomaster_dynamics_acados_reset(ocp_capsule, 1);
 
           // Set feasible initial trajectory (hover in place)
           for (int i = 0; i <= N_HORIZON; i++) {
@@ -649,24 +655,25 @@ private:
       }
 
       // Tear down the existing solver
-      asv_dynamics_acados_free(ocp_capsule);
-      asv_dynamics_acados_free_capsule(ocp_capsule);
+      robomaster_dynamics_acados_free(ocp_capsule);
+      robomaster_dynamics_acados_free_capsule(ocp_capsule);
 
       // Recreate with new discretization
-      ocp_capsule = asv_dynamics_acados_create_capsule();
-      int status = asv_dynamics_acados_create_with_discretization(
+      ocp_capsule = robomaster_dynamics_acados_create_capsule();
+      int status = robomaster_dynamics_acados_create_with_discretization(
           ocp_capsule, N_HORIZON, new_time_steps);
 
       // Re-fetch all the handles since they point into the new capsule
-      nlp_config = asv_dynamics_acados_get_nlp_config(ocp_capsule);
-      nlp_dims = asv_dynamics_acados_get_nlp_dims(ocp_capsule);
-      nlp_in = asv_dynamics_acados_get_nlp_in(ocp_capsule);
-      nlp_out = asv_dynamics_acados_get_nlp_out(ocp_capsule);
-      nlp_solver = asv_dynamics_acados_get_nlp_solver(ocp_capsule);
+      nlp_config = robomaster_dynamics_acados_get_nlp_config(ocp_capsule);
+      nlp_dims = robomaster_dynamics_acados_get_nlp_dims(ocp_capsule);
+      nlp_in = robomaster_dynamics_acados_get_nlp_in(ocp_capsule);
+      nlp_out = robomaster_dynamics_acados_get_nlp_out(ocp_capsule);
+      nlp_solver = robomaster_dynamics_acados_get_nlp_solver(ocp_capsule);
 
       // Push current params to every stage (fresh solver has defaults)
       for (int i = 0; i <= N_HORIZON; i++) {
-        asv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
+        robomaster_dynamics_acados_update_params(ocp_capsule, i, ocp_params,
+                                                 NP);
       }
 
       // Force warmup so the next solve rebuilds a good trajectory
@@ -714,8 +721,8 @@ private:
 
   void init_acados_solver() {
     RCLCPP_INFO(this->get_logger(), "Creating OCP solver...");
-    ocp_capsule = asv_dynamics_acados_create_capsule();
-    int status = asv_dynamics_acados_create_with_discretization(
+    ocp_capsule = robomaster_dynamics_acados_create_capsule();
+    int status = robomaster_dynamics_acados_create_with_discretization(
         ocp_capsule, N_HORIZON, NULL);
     if (status) {
       RCLCPP_INFO(this->get_logger(),
@@ -724,11 +731,11 @@ private:
       RCLCPP_INFO(this->get_logger(), "OCP solver created successfully");
     }
 
-    nlp_config = asv_dynamics_acados_get_nlp_config(ocp_capsule);
-    nlp_dims = asv_dynamics_acados_get_nlp_dims(ocp_capsule);
-    nlp_in = asv_dynamics_acados_get_nlp_in(ocp_capsule);
-    nlp_out = asv_dynamics_acados_get_nlp_out(ocp_capsule);
-    nlp_solver = asv_dynamics_acados_get_nlp_solver(ocp_capsule);
+    nlp_config = robomaster_dynamics_acados_get_nlp_config(ocp_capsule);
+    nlp_dims = robomaster_dynamics_acados_get_nlp_dims(ocp_capsule);
+    nlp_in = robomaster_dynamics_acados_get_nlp_in(ocp_capsule);
+    nlp_out = robomaster_dynamics_acados_get_nlp_out(ocp_capsule);
+    nlp_solver = robomaster_dynamics_acados_get_nlp_solver(ocp_capsule);
 
     // Set initial state
     for (int i = 0; i < N_OBS * 2; i++) {

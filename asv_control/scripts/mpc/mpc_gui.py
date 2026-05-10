@@ -52,9 +52,20 @@ class MPCWeightsTuner(QMainWindow):
             # ("avoidance_w", 10.0, 0.0, 1000.0, 0.01),
         ]
 
+        # Override defaults with values from launch-file parameters
+        self.weights_config = [
+            (name, node.initial_weights.get(name, default), mn, mx, step)
+            for name, default, mn, mx, step in self.weights_config
+        ]
+
         self.weights = [config[1] for config in self.weights_config]
         self.original_cross_weight = 0.0
         self.init_ui()
+
+        # Push initial values to the MPC node immediately on startup.
+        # tf triggers automatically via the valueChanged signal below.
+        self.tf_spinbox.setValue(node.initial_tf)
+        self.publish_weights()
 
     def init_ui(self):
         self.setWindowTitle("MPC Weights Tuner")
@@ -380,9 +391,33 @@ class MPCWeightsNode(Node):
 
         self.unblock_client = self.create_client(Empty, "/mpc/unblock")
 
+        # Declare initialisation parameters (overridable from launch file)
+        _weight_defaults = {
+            "w_along":     0.01,
+            "w_cross":     10.0,
+            "w_heading":   100.0,
+            "w_input":     0.01,
+            "w_surge":     0.1,
+            "w_sway":      100.0,
+            "w_yaw":       0.001,
+            "terminal_w":  10.0,
+            "avoidance_w": 75000.0,
+        }
+        for name, default in _weight_defaults.items():
+            self.declare_parameter(name, default)
+        self.declare_parameter("mpc_tf_init", 100.0)
+
+        self.initial_weights = {
+            name: self.get_parameter(name).get_parameter_value().double_value
+            for name in _weight_defaults
+        }
+        self.initial_tf = (
+            self.get_parameter("mpc_tf_init").get_parameter_value().double_value
+        )
+
         # Wait for service
         self.get_logger().info(
-            f"Waiting for parameter service on /mpc_node/set_parameters..."
+            "Waiting for parameter service on /mpc_node/set_parameters..."
         )
         while not self.set_params_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Service not available, waiting...")

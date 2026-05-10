@@ -13,6 +13,20 @@ def generate_launch_description():
     spline_publisher_node = Node(
         package="asv_control",
         executable="spline_publisher_node",
+        parameters=[
+            {"closed": False},
+            {
+                "waypoints": [
+                    -10.0, 0.0,
+                    -5.0, 0.0,
+                    500.0, 200.0,
+                    1300.0, -200.0,
+                    1900.0, 200.0,
+                    2500.0, -200.0,
+                ]
+            },
+            {"marker_scale": 1.0},
+        ],
     )
 
     obstacle_publisher = Node(

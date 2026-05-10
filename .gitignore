@@ -3,9 +3,9 @@ build/
 install/
 */.vscode/
 .vscode/
-asv_control/scripts/mpc/*.json
-asv_control/scripts/mpc/__pycache__
-asv_control/scripts/mpc/c_generated_code_*
+**/mpc/*.json
+**/mpc/__pycache__
+**/mpc/c_generated_code_*
 *.engine
 *.onnx
 *.deb

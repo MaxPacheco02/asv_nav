@@ -56,9 +56,19 @@ ament_target_dependencies(sine_refs_node ${DEPENDENCIES})
 add_executable(rviz_refs_node src/debug/aitsmc/rviz_refs_node.cpp)
 ament_target_dependencies(rviz_refs_node ${DEPENDENCIES})
 
-add_executable(spline_publisher_node src/spline_publisher_node.cpp
-                                     src/utils/CatmulRom.cpp)
+# ==================
+# ||| CatmulRom  |||
+# ==================
+
+add_library(catmul_rom src/utils/CatmulRom.cpp)
+target_include_directories(catmul_rom PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(catmul_rom Eigen3)
+
+add_executable(spline_publisher_node src/spline_publisher_node.cpp)
 ament_target_dependencies(spline_publisher_node ${DEPENDENCIES})
+target_link_libraries(spline_publisher_node catmul_rom)
 
 # ================
 # ||| MPC Node |||
@@ -81,10 +91,18 @@ file(GLOB ACADOS_GENERATED_SOURCES
      ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_asv_ocp/*/*.c)
 list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
 
-add_executable(mpc_node src/mpc_node.cpp src/utils/CatmulRom.cpp
-                        ${ACADOS_GENERATED_SOURCES})
+add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
 ament_target_dependencies(mpc_node ${DEPENDENCIES})
-target_link_libraries(mpc_node acados hpipm blasfeo m)
+target_link_libraries(mpc_node catmul_rom acados hpipm blasfeo m)
+
+install(
+  TARGETS catmul_rom
+  EXPORT asv_control_targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
+
+install(DIRECTORY include/ DESTINATION include)
 
 install(
   TARGETS aitsmc_node
@@ -102,6 +120,9 @@ install(DIRECTORY launch scripts DESTINATION share/${PROJECT_NAME})
 # Install Python executables
 install(PROGRAMS scripts/teleop_xbox_node.py scripts/mpc/mpc_gui.py
         DESTINATION lib/${PROJECT_NAME})
+
+ament_export_targets(asv_control_targets HAS_LIBRARY_TARGET)
+ament_export_dependencies(Eigen3)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
