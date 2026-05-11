@@ -41,15 +41,40 @@ R_SAFE_ELLIPSE = 0.3  # extra buffer added to both axes
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE
 
+# Arena boundary: convex polygon vertices in CCW order (metres, world frame).
+# Replace these 7 points with your actual lab polygon.
+ARENA_VERTICES = np.array(
+    [
+        [-4.18982437301333, -1.5185002579609614],
+        [-4.28981351852417, -1.5170269012451172],
+        [-6.2754411697387695, 0.22072847187519073],
+        [-6.426323890686035, 2.0404179096221924],
+        [4.514416217803955, 2.2635483741760254],
+        [4.651918411254883, -1.6103342771530151],
+        [4.551942798658694, -1.612542644427015],
+    ]
+)
+# Safety margin: robot centre must stay this far (m) inside each wall.
+ARENA_MARGIN = 0.15
+# Soft-constraint penalties for arena walls — much heavier than obstacle avoidance
+# so they act as near-hard constraints while keeping the solver always feasible.
+ARENA_L1 = 1e4
+ARENA_L2 = 1e5
+ARENA_TINY = 1e-3
+
 
 # Control bounds
-DT_MIN, DT_MAX = -0.01, 0.1
+DT_MIN, DT_MAX = 0.0, 0.10
 
 # State bounds: surge, sway, yaw-rate
 # Physical surge limits (from documentation specs):
+#
+# Original (but too fast haha)
+# YAW_MIN, YAW_MAX = -10.0, 10.0
+
 SURGE_MIN, SURGE_MAX = -2.5, 3.5
 SWAY_MIN, SWAY_MAX = -2.8, 2.8
-YAW_MIN, YAW_MAX = -10.0, 10.0
+YAW_MIN, YAW_MAX = -3.0, 3.0
 
 # robomaster footprint vertices in body frame (meters), ordered for polygon drawing
 ROBOMASTER_SHAPE = np.array(
@@ -75,6 +100,48 @@ P_T_LA = P_AUX + 0  # lookahead value among the spline param
 P_IN_LAST_S = P_AUX + 1  # is the ROBOMASTER in the last spline? param
 P_SPLINE_CEIL = P_AUX + 2  # numeric spline ceiling param
 P_OBS_VEL = P_AUX + 3  # (28) Index for each obstacle velocity
+
+
+# =============================================================================
+# Arena helpers
+# =============================================================================
+def _compute_half_planes(vertices: np.ndarray):
+    """Return (normals, offsets) for a convex polygon.
+
+    Accepts vertices in either CW or CCW order — the signed-area test
+    normalises to CCW before computing inward normals, so the constraint
+    normals[i] · [x, y] >= offsets[i]  always means "inside the polygon".
+    """
+    verts = np.asarray(vertices, dtype=float)
+    n = len(verts)
+
+    # Shoelace signed area: positive → CCW, negative → CW
+    signed_area = (
+        sum(
+            verts[i, 0] * verts[(i + 1) % n, 1] - verts[(i + 1) % n, 0] * verts[i, 1]
+            for i in range(n)
+        )
+        / 2.0
+    )
+    if signed_area < 0:
+        verts = verts[::-1]  # flip to CCW
+
+    normals = np.zeros((n, 2))
+    offsets = np.zeros(n)
+    for i in range(n):
+        p1 = verts[i]
+        p2 = verts[(i + 1) % n]
+        edge = p2 - p1
+        # Inward normal for CCW polygon: rotate edge 90° left → (-dy, dx)
+        inward = np.array([-edge[1], edge[0]])
+        inward /= np.linalg.norm(inward)
+        normals[i] = inward
+        offsets[i] = float(inward @ p1)
+    return normals, offsets
+
+
+ARENA_NORMALS, ARENA_OFFSETS = _compute_half_planes(ARENA_VERTICES)
+N_ARENA = len(ARENA_VERTICES)
 
 
 # =============================================================================
@@ -223,40 +290,67 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
         ellipse_val = (ox_body / A_ELL_EFF) ** 2 + (oy_body / B_ELL_EFF) ** 2
         h_expr_list.append(ellipse_val)
 
-    # 1. Stage Constraints (Obstacles)
+    # Arena half-plane constraints: n·[x,y] >= offset + margin  (one per wall)
+    for i in range(N_ARENA):
+        nx_i, ny_i = float(ARENA_NORMALS[i, 0]), float(ARENA_NORMALS[i, 1])
+        h_expr_list.append(nx_i * model.x[0] + ny_i * model.x[1])
+
+    n_h = OBS_N + N_ARENA
+
+    # 1. Stage Constraints (Obstacles + Arena walls)
     model.con_h_expr = vertcat(*h_expr_list)
-    n_h = OBS_N
 
-    ocp.constraints.lh = np.array([1.0] * OBS_N)
-    ocp.constraints.uh = np.array([1e15] * OBS_N)
+    # Lower bounds: ellipse >= 1,  half-plane >= offset + margin
+    arena_lh = ARENA_OFFSETS + ARENA_MARGIN
+    ocp.constraints.lh = np.concatenate([np.ones(OBS_N), arena_lh])
+    ocp.constraints.uh = np.full(n_h, 1e15)
 
-    # Soft constraint indices for stage (obstacles start at index 0)
+    # All constraints are soft; arena slacks use much heavier penalties.
     ocp.constraints.idxsh = np.arange(0, n_h)
 
-    # Apply heavy L1/L2 penalties to the stage slack variables
-    L1_penalty = 1e3
-    L2_penalty = 1e4
-    TINY_PENALTY = 1e-3  # Prevents the upper-slack singularity
+    L1_penalty = 1e1
+    L2_penalty = 1e2
+    TINY_PENALTY = 1e-3
 
-    ocp.cost.zl = np.ones(OBS_N) * L1_penalty
-    ocp.cost.zu = np.ones(OBS_N) * TINY_PENALTY
-    ocp.cost.Zl = np.ones(OBS_N) * L2_penalty
-    ocp.cost.Zu = np.ones(OBS_N) * TINY_PENALTY
+    ocp.cost.zl = np.concatenate(
+        [
+            np.ones(OBS_N) * L1_penalty,
+            np.ones(N_ARENA) * ARENA_L1,
+        ]
+    )
+    ocp.cost.zu = np.full(n_h, TINY_PENALTY)
+    ocp.cost.Zl = np.concatenate(
+        [
+            np.ones(OBS_N) * L2_penalty,
+            np.ones(N_ARENA) * ARENA_L2,
+        ]
+    )
+    ocp.cost.Zu = np.full(n_h, TINY_PENALTY)
 
     # ==========================================================
-    # 2. Terminal Constraints (Obstacles ONLY)
+    # 2. Terminal Constraints (Obstacles + Arena walls)
     # ==========================================================
-    model.con_h_expr_e = vertcat(*h_expr_list[0:])
+    model.con_h_expr_e = vertcat(*h_expr_list)
 
-    ocp.constraints.lh_e = np.array([1.0] * OBS_N)
-    ocp.constraints.uh_e = np.array([1e15] * OBS_N)
+    ocp.constraints.lh_e = np.concatenate([np.ones(OBS_N), arena_lh])
+    ocp.constraints.uh_e = np.full(n_h, 1e15)
 
-    ocp.constraints.idxsh_e = np.arange(0, OBS_N)
+    ocp.constraints.idxsh_e = np.arange(0, n_h)
 
-    ocp.cost.zl_e = np.ones(OBS_N) * L1_penalty
-    ocp.cost.zu_e = np.ones(OBS_N) * TINY_PENALTY
-    ocp.cost.Zl_e = np.ones(OBS_N) * L2_penalty
-    ocp.cost.Zu_e = np.ones(OBS_N) * TINY_PENALTY
+    ocp.cost.zl_e = np.concatenate(
+        [
+            np.ones(OBS_N) * L1_penalty,
+            np.ones(N_ARENA) * ARENA_L1,
+        ]
+    )
+    ocp.cost.zu_e = np.full(n_h, TINY_PENALTY)
+    ocp.cost.Zl_e = np.concatenate(
+        [
+            np.ones(OBS_N) * L2_penalty,
+            np.ones(N_ARENA) * ARENA_L2,
+        ]
+    )
+    ocp.cost.Zu_e = np.full(n_h, TINY_PENALTY)
 
     ocp.parameter_values = params
 
@@ -403,13 +497,13 @@ class Scenario:
     plot_every: int = 5
 
     # Initial ROBOMASTER state (x, y, psi, surge, sway, yaw, t)
-    robomaster0: tuple = (2.0, -4.0, 0.0, 0.0, 0.0, 0.0, 0.2)
+    robomaster0: tuple = (-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2)
 
     # Initial obstacle positions [(x, y), ...]
-    obs0: tuple = ((10.0, 4.0), (9.0, 5.0), (20.0, -10.0))
+    obs0: tuple = ((0.0, 4.0), (9.0, 5.0), (20.0, -10.0))
 
     # Obstacle velocities [(vx, vy), ...]
-    obs_vel: tuple = ((0.0, 0.50), (-0.90, -0.50), (-0.2, 0.4))
+    obs_vel: tuple = ((0.0, -0.50), (-0.90, -0.50), (-0.2, 0.4))
 
     # Obstacle world-bounds for reflecting (matches obstacle_publisher.cpp).
     # (x_min, x_max, y_min, y_max)
@@ -417,14 +511,14 @@ class Scenario:
 
     # Spline control points
     spline_ctrl: tuple = (
-        (-1.0, 0.0),
+        (-1.0, 0.001),
         (-0.50, 0.0),
-        (10.0, 4.0),
-        (130.0, -20.0),
+        (-0.50, 2.0),
+        (-1.0, 3.999),
     )
 
     # Cost weights: along, cross, heading, input, surge, sway, yaw, term, avo
-    weights: tuple = (0.05, 1.0, 10.0, 0.001, 0.001, 10.0, 0.001, 1.0, 10.0)
+    weights: tuple = (0.01, 1.0, 10.0, 0.001, 0.001, 10.0, 0.001, 1.0, 10.0)
 
     # Aux params: t_la, in_last_s, spline_ceil
     aux: tuple = (1.0, 1.0, 1.0)

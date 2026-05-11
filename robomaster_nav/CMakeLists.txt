@@ -19,6 +19,7 @@ find_package(Eigen3 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(asv_interfaces REQUIRED)
 find_package(asv_control REQUIRED)
+find_package(robomaster_msgs REQUIRED)
 
 set(DEPENDENCIES
     ament_cmake
@@ -33,7 +34,8 @@ set(DEPENDENCIES
     Eigen3
     tf2_geometry_msgs
     asv_control
-    asv_interfaces)
+    asv_interfaces
+    robomaster_msgs)
 
 add_executable(robomaster_vicon_handler src/robomaster_vicon_handler.cpp)
 ament_target_dependencies(robomaster_vicon_handler ${DEPENDENCIES})

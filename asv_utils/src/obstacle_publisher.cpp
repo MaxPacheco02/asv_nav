@@ -34,6 +34,18 @@ using namespace std::chrono_literals;
 class ObstaclePublisher : public rclcpp::Node {
 public:
   ObstaclePublisher() : Node("obstacle_publisher") {
+    this->declare_parameter<double>("max_vel", 10.0);
+    max_vel = this->get_parameter("max_vel").as_double();
+    this->declare_parameter<double>("marker_scale", 1.0);
+    marker_scale = this->get_parameter("marker_scale").as_double();
+    this->declare_parameter<std::vector<double>>("bouncing_area",
+                                                 std::vector<double>{});
+    auto bouncing_area = this->get_parameter("bouncing_area").as_double_array();
+    if (bouncing_area.size() > 0) {
+      for (int i = 0; i < 4; i++)
+        area[i] = bouncing_area[i];
+    }
+
     near_obs_pub_ = this->create_publisher<asv_interfaces::msg::ObstacleList>(
         "/mpc/near_obs", 10);
 
@@ -82,8 +94,9 @@ public:
     std::uniform_real_distribution<double> dist_vx(-max_vel, max_vel);
     std::uniform_real_distribution<double> dist_vy(-max_vel, max_vel);
 
+    double l = 50 * marker_scale;
     large_scale =
-        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(50).y(50).z(50);
+        geometry_msgs::build<geometry_msgs::msg::Vector3>().x(l).y(l).z(l);
     for (int i = 0; i < dyn_obs_n; i++) {
       dyn_obs[i][0] = dist_x(rng);
       dyn_obs[i][1] = dist_y(rng);
@@ -130,7 +143,9 @@ private:
   std::string uuid = "";
 
   double max_vel{10.0};
-  static const int dyn_obs_n{3};
+  double marker_scale{1.0};
+  static const int dyn_obs_n{10};
+  // x min, x max, y min, y max
   double area[4]{-1000, 4500, -1400, 1400};
   double dyn_obs[dyn_obs_n][4]{
       {100., 2., -10.20, 1.0},
@@ -178,9 +193,9 @@ private:
     marker.id = id;
     marker.type = marker_type[type].type;
     marker.scale = geometry_msgs::build<geometry_msgs::msg::Vector3>()
-                       .x(marker_type[type].x)
-                       .y(marker_type[type].y)
-                       .z(marker_type[type].z);
+                       .x(marker_type[type].x * marker_scale)
+                       .y(marker_type[type].y * marker_scale)
+                       .z(marker_type[type].z * marker_scale);
     marker.pose.position.x = x;
     marker.pose.position.y = y;
     marker.pose.position.z = marker_type[type].z_trans;

@@ -34,7 +34,6 @@ public:
     // Declare and read the closed-loop parameter
     this->declare_parameter<bool>("closed", false);
     closed_ = this->get_parameter("closed").as_bool();
-
     this->declare_parameter<double>("marker_scale", 1.0);
     marker_scale_ = this->get_parameter("marker_scale").as_double();
     this->declare_parameter<double>("lookahead", 300.0);

@@ -21,6 +21,7 @@
 #include "asv_interfaces/msg/state.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
@@ -68,7 +69,7 @@ public:
   }
 
 private:
-  static constexpr double TF = 2.5; // seconds
+  static constexpr double TF = 5.0; // seconds
   static constexpr int N_HORIZON =
       ROBOMASTER_DYNAMICS_N; // Assuming this macro comes from ACADOS
   static constexpr double DT = TF / N_HORIZON;
@@ -86,6 +87,7 @@ private:
       obs_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr sol_array_pub_;
   rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
       debug_ae_pub_, debug_ce_pub_, debug_he_pub_, debug_min_d_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
@@ -107,6 +109,7 @@ private:
       enabled_param_handle_, tf_param_handle_;
 
   asv_interfaces::msg::State ref_msg;
+  geometry_msgs::msg::Twist cmd_vel;
   std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
       debug_min_d_msg;
   nav_msgs::msg::Path sol_path_msg;
@@ -114,25 +117,24 @@ private:
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  // Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95}; // Filtering parameters for ASV.
-  Eigen::Vector3d nu_alpha{0.5, 0.5,
-                           0.5}; // Filtering parameters for RoboMaster S1.
+  Eigen::Vector3d nu_alpha{0.7, 0.7,
+                           0.7}; // Filtering parameters for RoboMaster
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.01,  10.0,  100.0, 0.01, 0.1,
-                                  100.0, 0.001, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{100.0, 0.1, 10.0, 1.0, 1.0,
-                                        1.0,   1.0, 1.0,  1.0};
+  std::vector<double> mpc_weights{0.1,   10.0,  100.0, 0.001, 0.001,
+                                  0.001, 0.001, 10.0,  0.0};
+  std::vector<double> tracking_to_avoid{2.0, 0.5, 10.0, 1.0, 1.0,
+                                        1.0, 1.0, 1.0,  1.0};
   std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01, 0.1,
                                         100.0, 0.001, 10.0,   10.0};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 0.30, ae_end = 0.2;
   static constexpr double min_ce = 0.5, max_ce = 2.0;
-  static constexpr double avoidance_start = 2.0, avoidance_end = 1.50;
+  static constexpr double avoidance_start = 3.0, avoidance_end = 1.0;
   // Max weight change per 50 ms control cycle. w_avo ramps,
   // preventing the RTI QP from seeing a discontinuous cost Hessian.
   static constexpr double max_w_rate = 1.0;
@@ -326,7 +328,12 @@ private:
       mpc_broken = false;
     }
 
+    cmd_vel.linear.x = ref_msg.u;
+    cmd_vel.linear.y = ref_msg.v;
+    cmd_vel.angular.z = ref_msg.r;
+
     ref_pub_->publish(ref_msg);
+    cmd_vel_pub_->publish(cmd_vel);
     debug_ae_pub_->publish(debug_ae_msg);
     debug_ce_pub_->publish(debug_ce_msg);
     debug_he_pub_->publish(debug_he_msg);
@@ -449,7 +456,7 @@ private:
     marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Line thickness
-    marker.scale.x = 1.0;
+    marker.scale.x = 0.01;
     double r{1}, g{0.33}, b{0}, a{0.65}; // Orange
     marker.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(r).g(g).b(b).a(a);
@@ -701,6 +708,8 @@ private:
         "/mpc/sol_array", 10);
     ref_pub_ = this->create_publisher<asv_interfaces::msg::State>(
         "/asv/state/ref", 10);
+    cmd_vel_pub_ =
+        this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
     debug_ae_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/a_e", 10);
     debug_ce_pub_ =

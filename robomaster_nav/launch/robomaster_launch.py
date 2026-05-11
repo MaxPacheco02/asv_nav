@@ -97,18 +97,39 @@ def generate_launch_description():
             {"closed": True},
             {
                 "waypoints": [
-                    -4.684593200683594,
-                    0.6731178760528564,
-                    -2.134843349456787,
-                    0.8934917449951172,
-                    -2.105011463165283,
-                    -1.0963650941848755,
-                    -3.708611011505127,
-                    -0.5749569535255432,
+                    -3.708519220352173,
+                    -0.8183400630950928,
+                    -4.5222063064575195,
+                    0.127112478017807,
+                    -3.8781960010528564,
+                    1.213521957397461,
+                    -0.6969701647758484,
+                    1.3372472524642944,
+                    2.855658769607544,
+                    1.0855484008789062,
+                    3.3021929264068604,
+                    0.09046795964241028,
+                    2.014171838760376,
+                    -0.9334477186203003,
+                    -0.4770919680595398,
+                    -1.1192071437835693,
                 ]
             },
+            {"marker_scale": 0.02},
+            {"lookahead": 1.5},
+        ],
+    )
+
+    obstacle_publisher = Node(
+        package="asv_utils",
+        executable="obstacle_publisher",
+        parameters=[
+            {
+                # x min, x max, y min, y max
+                "bouncing_area": [-5.0, 5.0, -5.0, 5.0]
+            },
             {"marker_scale": 0.01},
-            {"lookahead": 1.0},
+            {"max_vel": 1.0},
         ],
     )
 
@@ -120,9 +141,13 @@ def generate_launch_description():
             # If real life:
             # robomaster_vicon_handler,
             # robomaster_main_launch,
+            #
             robomaster_description,
             robomaster_rviz,
             spline_publisher_node,
-            mpc_launch,
+            obstacle_publisher,
+            #
+            # It's better to launch mpc separately because when it's not enabled, it fights with teleop twist node for control.
+            # mpc_launch,
         ]
     )
