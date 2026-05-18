@@ -30,4 +30,12 @@
       Press x to center camera on robot
     </description>
   </class>
+
+  <class name="asv_interfaces/DynObsTool"
+         type="asv_interfaces::rviz_tools::DynObsTool"
+         base_class_type="rviz_common::Tool">
+    <description>
+      Press a to set a dynamic obstacle goal pose on /rviz/dyn_obs
+    </description>
+  </class>
 </library>

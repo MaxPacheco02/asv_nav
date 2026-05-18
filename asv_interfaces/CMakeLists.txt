@@ -51,14 +51,16 @@ include_directories(include)
 # Set the source files
 set(RVIZ_TOOL_SOURCES
     src/rviz_tools/goal_tool.cpp src/rviz_tools/goal_from_tool.cpp
-    src/rviz_tools/goal_to_tool.cpp src/rviz_tools/center_on_robot_tool.cpp)
+    src/rviz_tools/goal_to_tool.cpp src/rviz_tools/center_on_robot_tool.cpp
+    src/rviz_tools/dyn_obs_tool.cpp)
 
 # Set the header files (important for MOC)
 set(RVIZ_TOOL_HEADERS
     include/asv_interfaces/rviz_tools/goal_tool.hpp
     include/asv_interfaces/rviz_tools/goal_from_tool.hpp
     include/asv_interfaces/rviz_tools/goal_to_tool.hpp
-    include/asv_interfaces/rviz_tools/center_on_robot_tool.hpp)
+    include/asv_interfaces/rviz_tools/center_on_robot_tool.hpp
+    include/asv_interfaces/rviz_tools/dyn_obs_tool.hpp)
 
 # Qt5 wrap (this is important!)
 qt5_wrap_cpp(RVIZ_TOOL_MOC_FILES ${RVIZ_TOOL_HEADERS})
