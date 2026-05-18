@@ -12,17 +12,20 @@ def main():
     cy = float(args[3]) if len(args) > 3 else 0.0
     N = int(args[4]) if len(args) > 4 else 24
 
-    print(f"# Lemniscate of Bernoulli  ax={ax}  ay={ay}  center=({cx}, {cy})  N={N}")
-    print(f"# Generated with: python3 gen_lemniscate.py {ax} {ay} {cx} {cy} {N}")
+    print(f"# fmt: off")
+    print(f"# Lemniscate of Bernoulli.")
+    print(f"# python3 gen_lemniscate.py {ax} {ay} {cx} {cy} {N}")
+    print(f"_WAYPOINTS = [")
 
     for i in range(N):
         t = 2 * math.pi * i / N
         denom = 1 + math.sin(t) ** 2
         x = ax * math.cos(t) / denom + cx
         y = ay * math.sin(t) * math.cos(t) / denom + cy
-        deg = round(t * 180 / math.pi)
-        comma = "," if i < N - 1 else " "
-        print(f"    {x:+.4f},  {y:+.4f}{comma}   # t={deg:3d}°")
+        print(f"    {x:+.3f}, {y:+.3f},")
+
+    print(f"]")
+    print(f"# fmt: on")
 
 
 if __name__ == "__main__":

@@ -15,25 +15,20 @@ def generate_launch_description():
         parameters=[
             {"w_along": 0.05},
             {"w_cross": 10.0},
-            {"w_heading": 1.0},
-            {"w_input": 0.01},
-            {"w_surge": 0.001},
-            {"w_sway": 0.001},
-            {"w_yaw": 0.001},
+            {"w_heading": 100.0},
+            {"w_input": 0.1},
+            {"w_surge": 0.01},
+            {"w_sway": 0.01},
+            {"w_yaw": 0.01},
             {"terminal_w": 10.0},
-            {"avoidance_w": 10.0},
+            {"avoidance_w": 0.01},
             {"mpc_tf_init": 5.0},
-            # Racing mode (worse tracking but fast).
+            # Racing mode (worse tracking but fast):
             # {"w_along": 30.0},
             # {"w_cross": 5.0},
-            # {"w_heading": 1.0},
-            # {"w_input": 0.0},
-            # {"w_surge": 0.00},
-            # {"w_sway": 0.00},
-            # {"w_yaw": 0.00},
-            # {"terminal_w": 10.0},
-            # {"avoidance_w": 10.0},
-            # {"mpc_tf_init": 5.0},
+            #
+            # If testing dynamic avoidance with many obstacles:
+            # {"w_along": 0.5},
         ],
     )
 

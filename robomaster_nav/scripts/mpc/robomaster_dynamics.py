@@ -33,8 +33,8 @@ def export_robomaster_model() -> RoboMasterAcadosModel:
     # =========================================================================
     lix = 0.1
     liy = 0.1
-    beta = 1. / (lix + liy)
-    
+    beta = 1.0 / (lix + liy)
+
     obs_n = 3
 
     # =========================================================================
@@ -154,13 +154,14 @@ def export_robomaster_model() -> RoboMasterAcadosModel:
     # =========================================================================
     # Full explicit ODE
     # =========================================================================
+    tau = 1.0  # time constant
     f_expl = vertcat(
         surge * cos_psi - sway * sin_psi,
         surge * sin_psi + sway * cos_psi,
         yaw,
-        (v0 + v1 + v2 + v3) / 4.,
-        (-v0 + v1 + v2 - v3) / 4.,
-        beta * (-v0 + v1 - v2 + v3) / 4.,
+        ((v0 + v1 + v2 + v3) / 4.0 - surge) / tau,  # surge_dot
+        ((-v0 + v1 + v2 - v3) / 4.0 - sway) / tau,  # sway_dot
+        (beta * (-v0 + v1 - v2 + v3) / 4.0 - yaw) / tau,  # yaw_dot
         dt_ctrl,
         *obs_dynamics,
     )
@@ -259,6 +260,6 @@ def export_robomaster_model() -> RoboMasterAcadosModel:
     model.u_labels = ["$u_v0$", "$u_v1$", "$u_v2$", "$u_v3$", "$\\dot{t}$"]
     model.t_label = "$t$ [s]"
 
-    model.v_max = 2.5
+    model.v_max = 2.0
 
     return model

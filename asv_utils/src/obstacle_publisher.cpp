@@ -160,7 +160,7 @@ private:
   std::map<std::string, MarkerProps> marker_type = {
       {"round", MarkerProps{2, 0.5, 0.5, 0.5, 0}},
       {"boat", MarkerProps{2, 1.0, 1.0, 1.0, 0}},
-      {"marker", MarkerProps{0, 20.0, 5.0, 5.0, 0.25}},
+      {"marker", MarkerProps{0, 20.0, 5.0, 5.0, 0}},
       {"picture", MarkerProps{1, 0.5, 0.5, 0.5, 0.25}},
   };
 

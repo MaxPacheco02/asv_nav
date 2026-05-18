@@ -41,7 +41,7 @@ static constexpr float COLORS[N_COLORS][3] = {
 
 // Ticks at 50 Hz for one full breath (0 → max → 0).
 // 50 ticks = 1 s per colour.
-static constexpr int PERIOD_TICKS = 75;
+static constexpr int PERIOD_TICKS = 25;
 
 class RMViconHandler : public rclcpp::Node {
 public:
@@ -50,7 +50,7 @@ public:
 
     vicon_pose_sub_ =
         this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/vicon/RobomasterS1_2/RobomasterS1_2", 1,
+            "/vicon/RobomasterS1_1/RobomasterS1_1", 1,
             [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
               // Sometimes the vicon sends position at 0,0 when it loses the
               // odometry fix to the vehicle.

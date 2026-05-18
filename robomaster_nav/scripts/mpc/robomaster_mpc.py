@@ -21,8 +21,8 @@ from robomaster_dynamics import export_robomaster_model
 # =============================================================================
 # Configuration
 # =============================================================================
-TF = 2.5
-N_HORIZON = 25
+TF = 10.0
+N_HORIZON = 50
 T_SIM = 1000.0
 
 # Avoidance cost: w * (1 / ellipse_val)^AVO_POWER
@@ -64,17 +64,14 @@ ARENA_TINY = 1e-3
 
 
 # Control bounds
-DT_MIN, DT_MAX = 0.0, 0.10
+DT_MIN, DT_MAX = 0.0, 100.0
 
 # State bounds: surge, sway, yaw-rate
-# Physical surge limits (from documentation specs):
-#
-# Original (but too fast haha)
-# YAW_MIN, YAW_MAX = -10.0, 10.0
+# Physical nu limits
 
-SURGE_MIN, SURGE_MAX = -2.5, 3.5
-SWAY_MIN, SWAY_MAX = -2.8, 2.8
-YAW_MIN, YAW_MAX = -3.0, 3.0
+SURGE_MIN, SURGE_MAX = -2.5, 2.5
+SWAY_MIN, SWAY_MAX = -2.5, 2.5
+YAW_MIN, YAW_MAX = -1.0, 1.0
 
 # robomaster footprint vertices in body frame (meters), ordered for polygon drawing
 ROBOMASTER_SHAPE = np.array(
@@ -308,8 +305,8 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     # All constraints are soft; arena slacks use much heavier penalties.
     ocp.constraints.idxsh = np.arange(0, n_h)
 
-    L1_penalty = 1e1
-    L2_penalty = 1e2
+    L1_penalty = 1e3
+    L2_penalty = 1e4
     TINY_PENALTY = 1e-3
 
     ocp.cost.zl = np.concatenate(

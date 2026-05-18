@@ -57,6 +57,8 @@ public:
     sol_path_msg.poses.resize(N_HORIZON + 1);
     sol_array_msg.poses.resize(sol_array_length);
 
+    debug_collision_d_msg.data = 0.2828;
+    debug_safety_d_msg.data = 0.5;
     init_acados_solver();
 
     debug_weights_msg.data.resize(N_WP);
@@ -89,7 +91,8 @@ private:
   rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr ref_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr sol_time_pub_,
-      debug_ae_pub_, debug_ce_pub_, debug_he_pub_, debug_min_d_pub_;
+      debug_ae_pub_, debug_ce_pub_, debug_he_pub_, debug_min_d_pub_,
+      debug_collision_d_pub_, debug_safety_d_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       debug_weights_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ellipse_pub_,
@@ -111,25 +114,24 @@ private:
   asv_interfaces::msg::State ref_msg;
   geometry_msgs::msg::Twist cmd_vel;
   std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
-      debug_min_d_msg;
+      debug_min_d_msg, debug_collision_d_msg, debug_safety_d_msg;
   nav_msgs::msg::Path sol_path_msg;
   geometry_msgs::msg::PoseArray sol_array_msg;
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  Eigen::Vector3d nu_alpha{0.7, 0.7,
-                           0.7}; // Filtering parameters for RoboMaster
+  Eigen::Vector3d nu_alpha{0., 0., 0.}; // Filtering parameters for RoboMaster
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.1,   10.0,  100.0, 0.001, 0.001,
-                                  0.001, 0.001, 10.0,  0.0};
+  std::vector<double> mpc_weights{0.05, 10.0, 100.0, 0.1, 0.01,
+                                  0.01, 0.01, 10.0,  0.0};
   std::vector<double> tracking_to_avoid{2.0, 0.5, 10.0, 1.0, 1.0,
                                         1.0, 1.0, 1.0,  1.0};
-  std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01, 0.1,
-                                        100.0, 0.001, 10.0,   10.0};
+  std::vector<double> avoidance_weights{0.1,  5.0,  1000.0, 0.1, 0.01,
+                                        0.01, 0.01, 10.0,   0.01};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 0.30, ae_end = 0.2;
@@ -140,7 +142,7 @@ private:
   static constexpr double max_w_rate = 1.0;
   // Re-warmup if an obstacle order is swapped, because their positions are
   // states, not just OCP params.
-  static constexpr double obs_reorder_threshold = 50.0;
+  static constexpr double obs_reorder_threshold = 1.0;
 
   double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
                                          1.0,  1.0,  10.0, 1.0};
@@ -319,7 +321,7 @@ private:
       // Re-initialize all stages to current state
       for (int i = 0; i <= N_HORIZON; i++) {
         ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
-        double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
+        double u_zero[NU] = {0.0, 0.0, 0.0, 0.0, 0.0};
         ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u", u_zero);
       }
       warmup_count = 0; // Force re-warmup
@@ -338,6 +340,8 @@ private:
     debug_ce_pub_->publish(debug_ce_msg);
     debug_he_pub_->publish(debug_he_msg);
     debug_min_d_pub_->publish(debug_min_d_msg);
+    debug_collision_d_pub_->publish(debug_collision_d_msg);
+    debug_safety_d_pub_->publish(debug_safety_d_msg);
     debug_weights_pub_->publish(debug_weights_msg);
     publish_ellipse_marker(x0[0], x0[1], x0[2]);
   }
@@ -568,24 +572,31 @@ private:
                 return;
 
               bool reorder = false;
+              bool vel_flip = false;
+              int param_idx = N_SP + N_WP + N_AP;
               for (int i = 0; i < N_OBS; i++) {
                 double dx = msg.obs_list[i].x - x0[7 + i * 2];
                 double dy = msg.obs_list[i].y - x0[7 + 1 + i * 2];
                 if (std::hypot(dx, dy) > obs_reorder_threshold)
                   reorder = true;
 
+                // Velocity flip: warm-start trajectory is now wrong for all
+                // stages — same patch needed as for a position-jump reorder.
+                double prev_vx = ocp_params[param_idx + i * 2];
+                double prev_vy = ocp_params[param_idx + 1 + i * 2];
+                if (prev_vx * msg.obs_list[i].v_x < 0.0 ||
+                    prev_vy * msg.obs_list[i].v_y < 0.0)
+                  vel_flip = true;
+
                 x0[7 + i * 2] = msg.obs_list[i].x;
                 x0[7 + 1 + i * 2] = msg.obs_list[i].y;
-
-                int param_idx = N_SP + N_WP + N_AP;
                 ocp_params[param_idx + i * 2] = msg.obs_list[i].v_x;
                 ocp_params[param_idx + 1 + i * 2] = msg.obs_list[i].v_y;
               }
 
-              if (reorder) {
+              if (reorder || vel_flip) {
                 // Keeping the ROBOMASTER trajectory warm-start.
                 // Only patch the obstacle states in each stage.
-                int param_idx = N_SP + N_WP + N_AP;
                 double stage_x[NX];
                 for (int i = 0; i <= N_HORIZON; i++) {
                   ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, i, "x",
@@ -600,9 +611,14 @@ private:
                                   stage_x);
                 }
                 warmup_count = 0;
-                RCLCPP_WARN(this->get_logger(),
-                            "Obstacle reorder detected. Patching obstacle "
-                            "states and forcing re-warmup");
+                if (vel_flip)
+                  RCLCPP_WARN(this->get_logger(),
+                              "Obstacle velocity flip detected. Patching "
+                              "obstacle states and forcing re-warmup");
+                else
+                  RCLCPP_WARN(this->get_logger(),
+                              "Obstacle reorder detected. Patching obstacle "
+                              "states and forcing re-warmup");
               }
             });
 
@@ -621,7 +637,7 @@ private:
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
 
             // Set zero controls
-            double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
+            double u_zero[NU] = {0.0, 0.0, 0.0, 0.0, 0.0};
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u",
                             u_zero);
           }
@@ -718,6 +734,10 @@ private:
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/h_e", 10);
     debug_min_d_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/min_d", 10);
+    debug_collision_d_pub_ =
+        this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/coll_d", 10);
+    debug_safety_d_pub_ =
+        this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/safe", 10);
     debug_weights_pub_ =
         this->create_publisher<std_msgs::msg::Float64MultiArray> //
         ("/mpc/debug/w_log", 10);

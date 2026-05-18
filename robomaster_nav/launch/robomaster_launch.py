@@ -6,6 +6,30 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
+# fmt: off
+# Lemniscate of Bernoulli.
+# python3 gen_lemniscate.py 3.0 3.0 -1.0 0.5 16
+_WAYPOINTS = [
+    +2.000, +0.500,
+    +1.418, +1.425,
+    +0.414, +1.500,
+    -0.381, +1.072,
+    -1.000, +0.500,
+    -1.619, -0.072,
+    -2.414, -0.500,
+    -3.418, -0.425,
+    -4.000, +0.500,
+    -3.418, +1.425,
+    -2.414, +1.500,
+    -1.619, +1.072,
+    -1.000, +0.500,
+    -0.381, -0.072,
+    +0.414, -0.500,
+    +1.418, -0.425,
+]
+# fmt: on
+
+
 def generate_launch_description():
     kinematics_node = Node(
         package="asv_control",
@@ -95,28 +119,9 @@ def generate_launch_description():
         executable="spline_publisher_node",
         parameters=[
             {"closed": True},
-            {
-                "waypoints": [
-                    -3.708519220352173,
-                    -0.8183400630950928,
-                    -4.5222063064575195,
-                    0.127112478017807,
-                    -3.8781960010528564,
-                    1.213521957397461,
-                    -0.6969701647758484,
-                    1.3372472524642944,
-                    2.855658769607544,
-                    1.0855484008789062,
-                    3.3021929264068604,
-                    0.09046795964241028,
-                    2.014171838760376,
-                    -0.9334477186203003,
-                    -0.4770919680595398,
-                    -1.1192071437835693,
-                ]
-            },
+            {"waypoints": _WAYPOINTS},
             {"marker_scale": 0.02},
-            {"lookahead": 1.5},
+            {"lookahead": 1.0},
         ],
     )
 
@@ -126,10 +131,11 @@ def generate_launch_description():
         parameters=[
             {
                 # x min, x max, y min, y max
-                "bouncing_area": [-5.0, 5.0, -5.0, 5.0]
+                "bouncing_area": [-10.0, 10.0, -4.0, 4.0]
+                # "bouncing_area": [-20.0, 20.0, -20.0, 20.0]
             },
             {"marker_scale": 0.01},
-            {"max_vel": 1.0},
+            {"max_vel": 2.0},
         ],
     )
 
