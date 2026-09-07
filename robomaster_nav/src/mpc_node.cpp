@@ -120,7 +120,13 @@ private:
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  Eigen::Vector3d nu_alpha{0., 0., 0.}; // Filtering parameters for RoboMaster
+
+  // Filtering parameters for RoboMaster
+  Eigen::Vector3d nu_alpha{
+      // 0., 0., 0.
+      .3, .3, .3
+      //
+  };
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
@@ -410,7 +416,7 @@ private:
   void publish_ellipse_marker(double robomaster_x, double robomaster_y,
                               double robomaster_psi) {
     visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = frame_id;
+    marker.header.frame_id = "base_link";
     marker.header.stamp = this->now();
     marker.ns = "safety_ellipse";
     marker.id = 0;
@@ -438,10 +444,8 @@ private:
 
       // 2. Rotate to global heading and translate to global position
       geometry_msgs::msg::Point p;
-      p.x = robomaster_x +
-            (lx * std::cos(robomaster_psi) - ly * std::sin(robomaster_psi));
-      p.y = robomaster_y +
-            (lx * std::sin(robomaster_psi) + ly * std::cos(robomaster_psi));
+      p.x = (lx * std::cos(robomaster_psi) - ly * std::sin(robomaster_psi));
+      p.y = (lx * std::sin(robomaster_psi) + ly * std::cos(robomaster_psi));
       p.z = 0.0; // Keep it flat on the water
 
       marker.points.push_back(p);

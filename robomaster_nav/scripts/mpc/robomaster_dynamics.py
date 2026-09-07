@@ -154,7 +154,8 @@ def export_robomaster_model() -> RoboMasterAcadosModel:
     # =========================================================================
     # Full explicit ODE
     # =========================================================================
-    tau = 1.0  # time constant
+    # tau = 1.0  # time constant (for simulations)
+    tau = 0.20  # time constant (for real-life, tau is actual delay)
     f_expl = vertcat(
         surge * cos_psi - sway * sin_psi,
         surge * sin_psi + sway * cos_psi,

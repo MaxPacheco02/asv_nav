@@ -16,7 +16,6 @@
   <buildtool_depend>tf2_geometry_msgs</buildtool_depend>
   <buildtool_depend>visualization_msgs</buildtool_depend>
   <buildtool_depend>sensor_msgs</buildtool_depend>
-  <buildtool_depend>Eigen3</buildtool_depend>
   <buildtool_depend>tf2_ros</buildtool_depend>
   <buildtool_depend>asv_interfaces</buildtool_depend>
   <depend>asv_control</depend>
@@ -35,7 +34,6 @@
     <buildtool_type>tf2_geometry_msgs</buildtool_type>
     <buildtool_type>visualization_msgs</buildtool_type>
     <buildtool_type>sensor_msgs</buildtool_type>
-    <buildtool_type>Eigen3</buildtool_type>
     <buildtool_type>tf2_ros</buildtool_type>
     <buildtool_type>asv_interfaces</buildtool_type>
   </export>

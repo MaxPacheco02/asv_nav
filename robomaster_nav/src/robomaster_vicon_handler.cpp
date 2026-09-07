@@ -50,7 +50,7 @@ public:
 
     vicon_pose_sub_ =
         this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/vicon/RobomasterS1_1/RobomasterS1_1", 1,
+            "/vicon/RobomasterS1_2/RobomasterS1_2", 1,
             [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
               // Sometimes the vicon sends position at 0,0 when it loses the
               // odometry fix to the vehicle.

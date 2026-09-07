@@ -79,7 +79,7 @@ public:
         });
 
     timer_ = this->create_wall_timer(
-        100ms, std::bind(&ObstaclePublisher::timer_callback, this));
+        50ms, std::bind(&ObstaclePublisher::timer_callback, this));
 
     dummy_obs.color = 5;
     dummy_obs.type = "NaN";
@@ -144,7 +144,7 @@ private:
 
   double max_vel{10.0};
   double marker_scale{1.0};
-  static const int dyn_obs_n{10};
+  static const int dyn_obs_n{6};
   // x min, x max, y min, y max
   double area[4]{-1000, 4500, -1400, 1400};
   double dyn_obs[dyn_obs_n][4]{
@@ -241,7 +241,7 @@ private:
   }
 
   void update_dyn() {
-    double dt = 0.1;
+    double dt = 0.05;
     for (int i = 0; i < dyn_obs_n; i++) {
       dyn_obs[i][0] += dyn_obs[i][2] * dt;
       dyn_obs[i][1] += dyn_obs[i][3] * dt;
