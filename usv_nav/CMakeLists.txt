@@ -59,25 +59,29 @@ target_link_libraries(aitsmc_node usv_dynamic_model asv_control::aitsmc)
 # ||| MPC Node |||
 # ================
 
-# # Find ACADOS set(ACADOS_INSTALL_DIR "$ENV{HOME}/acados") include_directories(
-# ${ACADOS_INSTALL_DIR}/include ${ACADOS_INSTALL_DIR}/include/acados
-# ${ACADOS_INSTALL_DIR}/include/blasfeo/include
-# ${ACADOS_INSTALL_DIR}/include/hpipm/include)
-# link_directories(${ACADOS_INSTALL_DIR}/lib)
-#
-# # Include generated code directory include_directories(
-# ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp) # Add all
-# generated source files file(GLOB ACADOS_GENERATED_SOURCES
-# ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp/*.c
-# ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp/*/*.c)
-# list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
-#
-# add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
-# ament_target_dependencies(mpc_node ${DEPENDENCIES})
-# target_link_libraries(mpc_node asv_control::catmul_rom acados hpipm blasfeo m)
+# Find ACADOS
+set(ACADOS_INSTALL_DIR "$ENV{HOME}/acados")
+include_directories(
+  ${ACADOS_INSTALL_DIR}/include ${ACADOS_INSTALL_DIR}/include/acados
+  ${ACADOS_INSTALL_DIR}/include/blasfeo/include
+  ${ACADOS_INSTALL_DIR}/include/hpipm/include)
+link_directories(${ACADOS_INSTALL_DIR}/lib)
 
-install(TARGETS # mpc_node
-                dynamic_model_node aitsmc_node DESTINATION lib/${PROJECT_NAME})
+# Include generated code directory
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp)
+# Add all generated source files
+file(GLOB ACADOS_GENERATED_SOURCES
+     ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp/*.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mpc/c_generated_code_usv_ocp/*/*.c)
+list(FILTER ACADOS_GENERATED_SOURCES EXCLUDE REGEX "main_.*\\.c$")
+
+add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
+ament_target_dependencies(mpc_node ${DEPENDENCIES})
+target_link_libraries(mpc_node asv_control::catmul_rom acados hpipm blasfeo m)
+
+install(TARGETS mpc_node dynamic_model_node aitsmc_node
+        DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch rviz scripts DESTINATION share/${PROJECT_NAME})
 

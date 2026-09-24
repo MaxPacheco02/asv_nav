@@ -6,42 +6,45 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.conditions import IfCondition, UnlessCondition
 
+
 def generate_launch_description():
-    rviz_config = os.path.join(get_package_share_directory("usv_description"),'rviz/','mpc.rviz')
+    rviz_config = os.path.join(
+        get_package_share_directory("asv_description"), "rviz/", "usv.rviz"
+    )
 
     rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_config],
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        arguments=["-d", rviz_config],
     )
 
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
 
-    # urdf_file_name = 'usv.urdf'
-    urdf_file_name = 'vtecs4.urdf'
+    urdf_file_name = "usv.urdf"
     urdf = os.path.join(
-        get_package_share_directory("usv_description"), "urdf/", urdf_file_name)
-    with open(urdf, 'r') as infp:
+        get_package_share_directory("asv_description"), "urdf/", urdf_file_name
+    )
+    with open(urdf, "r") as infp:
         robot_desc = infp.read()
 
-    tf2 = Node(
-        package="usv_control",
-        executable="usv_tf2_broadcaster_node",
+    return LaunchDescription(
+        [
+            rviz,
+            DeclareLaunchArgument(
+                "use_sim_time",
+                default_value="false",
+                description="Use simulation (Gazebo) clock if true",
+            ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                name="robot_state_publisher",
+                output="screen",
+                parameters=[
+                    {"use_sim_time": use_sim_time, "robot_description": robot_desc}
+                ],
+                arguments=[urdf],
+            ),
+        ]
     )
-
-    return LaunchDescription([
-        # tf2,
-        rviz,
-        DeclareLaunchArgument(
-            'use_sim_time',
-            default_value='false',
-            description='Use simulation (Gazebo) clock if true'),
-        Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='robot_state_publisher',
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time, 'robot_description': robot_desc}],
-            arguments=[urdf]),
-    ])

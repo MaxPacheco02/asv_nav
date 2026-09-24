@@ -18,7 +18,7 @@
         <pose>-0.3 0 0 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://vtec_s4/meshes/asv.dae</uri>
+            <uri>file://usv/meshes/asv.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -28,7 +28,7 @@
         <geometry>
           <mesh>
             <!-- <scale>1.5 1 1</scale> -->
-            <uri>file://vtec_s4/meshes/hull_collision.glb</uri>
+            <uri>file://usv/meshes/hull_collision.glb</uri>
           </mesh>
         </geometry>
       </collision>
@@ -97,7 +97,7 @@
           name="ros_gz_point_cloud::PointCloud">
           <namespace>custom_params</namespace>
           <topic>pc2</topic>
-          <frame_id>vtec_s4/base_link/rgbd_camera</frame_id>
+          <frame_id>usv/base_link/rgbd_camera</frame_id>
         </plugin>
       </sensor>
 
@@ -122,7 +122,7 @@
         <pose>-0.3 0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://vtec_s4/meshes/housing.dae</uri>
+            <uri>file://usv/meshes/housing.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -130,8 +130,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://vtec_s4/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://vtec_s4/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -166,7 +166,7 @@
         <pose>-0.3 0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://vtec_s4/meshes/prop.dae</uri>
+            <uri>file://usv/meshes/prop.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -174,8 +174,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://vtec_s4/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://vtec_s4/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -210,7 +210,7 @@
         <pose>-0.3 -0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://vtec_s4/meshes/housing.dae</uri>
+            <uri>file://usv/meshes/housing.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -218,8 +218,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://vtec_s4/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://vtec_s4/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -255,7 +255,7 @@
         <pose>-0.3 -0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://vtec_s4/meshes/prop.dae</uri>
+            <uri>file://usv/meshes/prop.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -263,8 +263,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://vtec_s4/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://vtec_s4/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -435,7 +435,7 @@
       filename="gz-waves1-hydrodynamics-system"
       name="gz::sim::systems::Hydrodynamics">
 
-      <enable>vtec_s4::base_link</enable>
+      <enable>usv::base_link</enable>
 
       <hydrodynamics>
         <damping_on>1</damping_on>
@@ -472,19 +472,19 @@
 
 <!--
 # Listening to the gz sim's topic
-gz topic -e -t /model/vtec_s4/joint/right_engine_propeller_joint/cmd_thrust
+gz topic -e -t /model/usv/joint/right_engine_propeller_joint/cmd_thrust
 
 # Publishing to the gz sim's topic
-gz topic -t /model/vtec_s4/joint/right_engine_propeller_joint/cmd_thrust -m gz.msgs.Double -p 'data:10'
+gz topic -t /model/usv/joint/right_engine_propeller_joint/cmd_thrust -m gz.msgs.Double -p 'data:10'
 
 # Running a ros2 <-> gz bridge
 ros2 run ros_gz_bridge parameter_bridge
-/model/vtec_s4/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
+/model/usv/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
 ros2 run ros_gz_bridge parameter_bridge
-/model/vtec_s4/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
+/model/usv/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
 
 # Publishing a ros2 topic
-ros2 topic pub /model/vtec_s4/joint/left_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
-ros2 topic pub /model/vtec_s4/joint/right_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
+ros2 topic pub /model/usv/joint/left_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
+ros2 topic pub /model/usv/joint/right_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
 
 -->

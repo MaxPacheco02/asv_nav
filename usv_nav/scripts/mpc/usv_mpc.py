@@ -29,9 +29,9 @@ WARMUP_STEPS = 5
 
 # Ellipse defining USV footprint (semi-axes, metres)
 A_ELLIPSE = 1.50  # longitudinal (bow-stern)
-B_ELLIPSE = 1.50  # lateral (beam)
+B_ELLIPSE = 0.50  # lateral (beam)
 ELLIPSE_OFFSET = 0.0  # shift centre fore/aft if COG isn't midship
-R_SAFE_ELLIPSE = 0.5  # extra buffer added to both axes
+R_SAFE_ELLIPSE = 1.0  # extra buffer added to both axes
 
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE

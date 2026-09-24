@@ -1,4 +1,5 @@
 #include <Eigen/Dense>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -10,7 +11,7 @@
 
 // ACADOS includes
 #include "acados_c/ocp_nlp_interface.h"
-#include "acados_solver_asv_dynamics.h"
+#include "acados_solver_usv_dynamics.h"
 
 // ROS deps
 #include "rclcpp/rclcpp.hpp"
@@ -29,9 +30,9 @@
 #include "std_srvs/srv/empty.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
-#define NX ASV_DYNAMICS_NX
-#define NU ASV_DYNAMICS_NU
-#define NP ASV_DYNAMICS_NP
+#define NX USV_DYNAMICS_NX
+#define NU USV_DYNAMICS_NU
+#define NP USV_DYNAMICS_NP
 
 struct WeightParams {
   double min_t, max_t;
@@ -48,7 +49,8 @@ public:
     init_subscribers();
     init_publishers();
 
-    timer_ = this->create_wall_timer(50ms, std::bind(&MPCNode::update, this));
+    timer_ = this->create_wall_timer(std::chrono::duration<double>(CONTROL_DT),
+                                     std::bind(&MPCNode::update, this));
 
     sol_path_msg.header.frame_id = frame_id;
     sol_array_msg.header.frame_id = frame_id;
@@ -63,20 +65,25 @@ public:
 
   ~MPCNode() {
     // === CLEANUP ===
-    asv_dynamics_acados_free(ocp_capsule);
-    asv_dynamics_acados_free_capsule(ocp_capsule);
+    usv_dynamics_acados_free(ocp_capsule);
+    usv_dynamics_acados_free_capsule(ocp_capsule);
   }
 
 private:
-  static constexpr double TF = 100.0; // seconds
+  static constexpr double TF = 10.0; // seconds
   static constexpr int N_HORIZON =
-      ASV_DYNAMICS_N; // Assuming this macro comes from ACADOS
+      USV_DYNAMICS_N; // Assuming this macro comes from ACADOS
   static constexpr double DT = TF / N_HORIZON;
+  static constexpr double CONTROL_DT = 0.05; // Timer period [s]
   static constexpr int N_OBS = 3;
   static constexpr int N_SP = 16; // Spline params (4 x 2 NDIMS x 2 splines)
   static constexpr int N_WP = 9;  // Weight params
   static constexpr int N_AP = 3;  // Additional params
   static constexpr int N_OP = N_OBS * 2; // Obstacle params (velocities)
+  // Thrust commands are states (appended last by usv_dynamics.py)
+  static constexpr int IDX_TPORT = 7 + 2 * N_OBS;
+  static constexpr int IDX_TSTBD = IDX_TPORT + 1;
+  static constexpr double T_NORM_MIN = -30.0 / 36.5; // T_MIN / T_MAX
   static constexpr int n_points = 20;
   static constexpr const char *frame_id = "world";
   static constexpr int sol_array_length = 10;
@@ -114,29 +121,29 @@ private:
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  Eigen::Vector3d nu_alpha{0.9, 0.9, 0.95};
+  Eigen::Vector3d nu_alpha{0., 0., 0.};
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
   // w_along, w_cross, w_heading, w_input, w_surge, w_sway, w_yaw, w_terminal,
   // w_avoidance
-  std::vector<double> mpc_weights{0.01,  10.0,  100.0, 0.01, 0.1,
-                                  100.0, 0.001, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{100.0, 0.1, 10.0, 1.0, 1.0,
-                                        1.0,   1.0, 1.0,  1.0};
-  std::vector<double> avoidance_weights{1.0,   1.0,   1000.0, 0.01,   0.1,
-                                        100.0, 0.001, 10.0,   75000.0};
+  std::vector<double> mpc_weights{0.05, 10.0, 100.0, 0.1, 0.01,
+                                  0.01, 0.01, 10.0,  0.0};
+  std::vector<double> tracking_to_avoid{2.0, 0.5, 10.0, 1.0, 1.0,
+                                        1.0, 1.0, 1.0,  1.0};
+  std::vector<double> avoidance_weights{0.1,  5.0,  1000.0, 0.1, 0.01,
+                                        0.01, 0.01, 10.0,   0.01};
 
   // map input [min,max] to output [min,max]
-  static constexpr double ae_start = 200.0, ae_end = 150.0;
-  static constexpr double min_ce = 10.0, max_ce = 120.0;
-  static constexpr double avoidance_start = 250.0, avoidance_end = 100.0;
+  static constexpr double ae_start = 1.0, ae_end = 0.5;
+  static constexpr double min_ce = 0.5, max_ce = 3.0;
+  static constexpr double avoidance_start = 6.0, avoidance_end = 2.5;
   // Max weight change per 50 ms control cycle. w_avo ramps,
   // preventing the RTI QP from seeing a discontinuous cost Hessian.
-  static constexpr double max_w_rate = 1000.0;
+  static constexpr double max_w_rate = 1.0;
   // Re-warmup if an obstacle order is swapped, because their positions are
   // states, not just OCP params.
-  static constexpr double obs_reorder_threshold = 50.0;
+  static constexpr double obs_reorder_threshold = 2.0;
 
   double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
                                          1.0,  1.0,  10.0, 1.0};
@@ -162,6 +169,7 @@ private:
   double mpc_tf{TF}, s_t{0.0};
   bool mpc_enabled{false};
   bool mpc_broken{false};
+  bool spline_received{false};
   Eigen::Vector3d asv_breakdown;
   Eigen::Vector2d asv, nearest_obs;
   double obs_predicted_d{std::numeric_limits<double>::max()};
@@ -170,9 +178,9 @@ private:
 
   double ocp_params[NP];
   double pt_weights[N_WP];
-  double x0[NX];
+  double x0[NX]{};
 
-  asv_dynamics_solver_capsule *ocp_capsule;
+  usv_dynamics_solver_capsule *ocp_capsule;
   ocp_nlp_config *nlp_config;
   ocp_nlp_dims *nlp_dims;
   ocp_nlp_in *nlp_in;
@@ -190,11 +198,16 @@ private:
 
   void update_all_params() {
     for (int i = 0; i <= N_HORIZON; i++) {
-      asv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
+      usv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
     }
   }
 
   void update() {
+    // All-zero spline coeffs give atan2(0, 0) in the heading reference, which
+    // NaNs the QP and poisons the solver memory. Wait for the first spline.
+    if (!spline_received)
+      return;
+
     // Params may always be changing
     recompute_weights(obs_predicted_d);
     update_all_params();
@@ -216,14 +229,14 @@ private:
       int rti_phase = 0;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = usv_dynamics_acados_solve(ocp_capsule);
       warmup_count++;
     } else {
       // Normal RTI: preparation then feedback
       int rti_phase = 1;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = usv_dynamics_acados_solve(ocp_capsule);
 
       if (status != 0 && status != 2 && status != 5) {
         RCLCPP_WARN(this->get_logger(), "Preparation phase returned status %d",
@@ -233,11 +246,17 @@ private:
       rti_phase = 2;
       ocp_nlp_solver_opts_set(nlp_config, ocp_capsule->nlp_opts, "rti_phase",
                               &rti_phase);
-      status = asv_dynamics_acados_solve(ocp_capsule);
+      status = usv_dynamics_acados_solve(ocp_capsule);
     }
 
     // Get optimal control
     ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, 0, "u", simU);
+
+    // Thrusts are MPC-internal states: advance them with the applied rates
+    // over one control period, as the plant integrator does in usv_mpc.py
+    for (int i : {0, 1})
+      x0[IDX_TPORT + i] =
+          std::clamp(x0[IDX_TPORT + i] + simU[i] * CONTROL_DT, T_NORM_MIN, 1.0);
 
     auto end_t = std::chrono::high_resolution_clock::now();
     sol_time_msg.data = std::chrono::duration<double>(end_t - start_t).count();
@@ -274,7 +293,10 @@ private:
     publish_obs_marker(xtraj);
     obs_predicted_d = min_obs_predicted_d;
 
-    int sol_idx = 1;
+    double REF_LOOKAHEAD = 0.5; // s. Get reference at this time.
+    int sol_idx = std::clamp(
+        static_cast<int>(std::round(REF_LOOKAHEAD / (mpc_tf / N_HORIZON))), 1,
+        N_HORIZON);
     filter_sol(Eigen::Vector3d{xtraj[sol_idx * NX + 3], xtraj[sol_idx * NX + 4],
                                xtraj[sol_idx * NX + 5]});
     ref_msg.x = xtraj[sol_idx * NX + 0];
@@ -299,7 +321,7 @@ private:
     sol_array_pub_->publish(sol_array_msg);
 
     if (!mpc_enabled || status == 4) {
-      RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED");
+      RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED (status=%d)", status);
       if (!mpc_broken) {
         mpc_broken = true;
         asv_breakdown << x0[0], x0[1], x0[2];
@@ -311,10 +333,13 @@ private:
       ref_msg.v = 0.0;
       ref_msg.r = 0.0;
 
-      // Re-initialize all stages to current state
+      // Clear solver memory (a NaN persists in the multipliers otherwise),
+      // then re-initialize all stages to current state
+      usv_dynamics_acados_reset(ocp_capsule, 1);
+      x0[IDX_TPORT] = x0[IDX_TSTBD] = 0.0;
       for (int i = 0; i <= N_HORIZON; i++) {
         ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
-        double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
+        double u_zero[NU] = {0.0, 0.0, 0.0};
         ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u", u_zero);
       }
       warmup_count = 0; // Force re-warmup
@@ -403,15 +428,15 @@ private:
     marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Line thickness and color (Bright Red)
-    marker.scale.x = 1.0;
+    marker.scale.x = 0.05;
     marker.color.r = 1.0;
     marker.color.g = 0.0;
     marker.color.b = 0.0;
     marker.color.a = 0.5;
 
     // Effective dimensions from Python script
-    double A_ELL_EFF = 95.0; // 65.0 length + safety radius
-    double B_ELL_EFF = 50.0; // 20.0 width + safety radius
+    double A_ELL_EFF = 2.5; // 1.5 length + safety radius
+    double B_ELL_EFF = 1.5; // 1.5 width + safety radius
 
     for (int i = 0; i <= ellipse_points; i++) {
       // Calculate the angle for this point
@@ -443,7 +468,7 @@ private:
     marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Line thickness
-    marker.scale.x = 1.0;
+    marker.scale.x = 0.05;
     double r{1}, g{0.33}, b{0}, a{0.65}; // Orange
     marker.color =
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(r).g(g).b(b).a(a);
@@ -473,7 +498,7 @@ private:
 
   void init_subscribers() {
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/asv/state/odom", 1, [this](const nav_msgs::msg::Odometry &msg) {
+        "/usv/state/odom", 1, [this](const nav_msgs::msg::Odometry &msg) {
           auto &q = msg.pose.pose.orientation;
 
           x0[0] = msg.pose.pose.position.x;
@@ -545,6 +570,7 @@ private:
               }
               ocp_params[N_SP + N_WP + 2] = new_ceil;
               cross_e = get_crosstrack_e();
+              spline_received = true;
             });
 
     obstacle_list_sub_ =
@@ -600,15 +626,16 @@ private:
           RCLCPP_WARN(this->get_logger(), "UNBLOCKING MPC - Resetting solver");
 
           // Reset solver state
-          asv_dynamics_acados_reset(ocp_capsule, 1);
+          usv_dynamics_acados_reset(ocp_capsule, 1);
 
           // Set feasible initial trajectory (hover in place)
+          x0[IDX_TPORT] = x0[IDX_TSTBD] = 0.0;
           for (int i = 0; i <= N_HORIZON; i++) {
             // Set all stages to current state
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "x", x0);
 
             // Set zero controls
-            double u_zero[NU] = {0.0, 0.0, 0.0, 0.0};
+            double u_zero[NU] = {0.0, 0.0, 0.0};
             ocp_nlp_out_set(nlp_config, nlp_dims, nlp_out, nlp_in, i, "u",
                             u_zero);
           }
@@ -649,24 +676,24 @@ private:
       }
 
       // Tear down the existing solver
-      asv_dynamics_acados_free(ocp_capsule);
-      asv_dynamics_acados_free_capsule(ocp_capsule);
+      usv_dynamics_acados_free(ocp_capsule);
+      usv_dynamics_acados_free_capsule(ocp_capsule);
 
       // Recreate with new discretization
-      ocp_capsule = asv_dynamics_acados_create_capsule();
-      int status = asv_dynamics_acados_create_with_discretization(
+      ocp_capsule = usv_dynamics_acados_create_capsule();
+      int status = usv_dynamics_acados_create_with_discretization(
           ocp_capsule, N_HORIZON, new_time_steps);
 
       // Re-fetch all the handles since they point into the new capsule
-      nlp_config = asv_dynamics_acados_get_nlp_config(ocp_capsule);
-      nlp_dims = asv_dynamics_acados_get_nlp_dims(ocp_capsule);
-      nlp_in = asv_dynamics_acados_get_nlp_in(ocp_capsule);
-      nlp_out = asv_dynamics_acados_get_nlp_out(ocp_capsule);
-      nlp_solver = asv_dynamics_acados_get_nlp_solver(ocp_capsule);
+      nlp_config = usv_dynamics_acados_get_nlp_config(ocp_capsule);
+      nlp_dims = usv_dynamics_acados_get_nlp_dims(ocp_capsule);
+      nlp_in = usv_dynamics_acados_get_nlp_in(ocp_capsule);
+      nlp_out = usv_dynamics_acados_get_nlp_out(ocp_capsule);
+      nlp_solver = usv_dynamics_acados_get_nlp_solver(ocp_capsule);
 
       // Push current params to every stage (fresh solver has defaults)
       for (int i = 0; i <= N_HORIZON; i++) {
-        asv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
+        usv_dynamics_acados_update_params(ocp_capsule, i, ocp_params, NP);
       }
 
       // Force warmup so the next solve rebuilds a good trajectory
@@ -693,7 +720,7 @@ private:
     sol_array_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/mpc/sol_array", 10);
     ref_pub_ = this->create_publisher<asv_interfaces::msg::State>(
-        "/asv/state/ref", 10);
+        "/usv/state/ref", 10);
     debug_ae_pub_ =
         this->create_publisher<std_msgs::msg::Float64>("/mpc/debug/a_e", 10);
     debug_ce_pub_ =
@@ -714,8 +741,8 @@ private:
 
   void init_acados_solver() {
     RCLCPP_INFO(this->get_logger(), "Creating OCP solver...");
-    ocp_capsule = asv_dynamics_acados_create_capsule();
-    int status = asv_dynamics_acados_create_with_discretization(
+    ocp_capsule = usv_dynamics_acados_create_capsule();
+    int status = usv_dynamics_acados_create_with_discretization(
         ocp_capsule, N_HORIZON, NULL);
     if (status) {
       RCLCPP_INFO(this->get_logger(),
@@ -724,11 +751,11 @@ private:
       RCLCPP_INFO(this->get_logger(), "OCP solver created successfully");
     }
 
-    nlp_config = asv_dynamics_acados_get_nlp_config(ocp_capsule);
-    nlp_dims = asv_dynamics_acados_get_nlp_dims(ocp_capsule);
-    nlp_in = asv_dynamics_acados_get_nlp_in(ocp_capsule);
-    nlp_out = asv_dynamics_acados_get_nlp_out(ocp_capsule);
-    nlp_solver = asv_dynamics_acados_get_nlp_solver(ocp_capsule);
+    nlp_config = usv_dynamics_acados_get_nlp_config(ocp_capsule);
+    nlp_dims = usv_dynamics_acados_get_nlp_dims(ocp_capsule);
+    nlp_in = usv_dynamics_acados_get_nlp_in(ocp_capsule);
+    nlp_out = usv_dynamics_acados_get_nlp_out(ocp_capsule);
+    nlp_solver = usv_dynamics_acados_get_nlp_solver(ocp_capsule);
 
     // Set initial state
     for (int i = 0; i < N_OBS * 2; i++) {
