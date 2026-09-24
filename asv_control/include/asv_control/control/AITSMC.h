@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <memory>
 
 struct AITSMCStateParams {
   double beta, epsilon, k_alpha, k_beta, tc, q, p;
@@ -26,6 +27,7 @@ public:
   static double angle_dist(double ang1, double ang2);
   void reset_integral();
   void reset_integral(int idx);
+  void set_model(std::shared_ptr<DynamicModel> m) { model = std::move(m); }
 
   [[nodiscard]] AITSMCDebugData getDebugData(int idx) const {
     return debugData[idx];
@@ -44,7 +46,7 @@ protected:
   Eigen::Vector3d K_dot_last{Eigen::Vector3d::Zero()};
 
   std::array<AITSMCDebugData, 3> debugData;
-  DynamicModel model;
+  std::shared_ptr<DynamicModel> model{std::make_shared<DynamicModel>()};
 
   double prev_ang0{0.0};
   double prev_ang1{0.0};

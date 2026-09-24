@@ -6,7 +6,9 @@ DynamicModel::DynamicModel()
 }
 
 DynamicModel::DynamicModel(const Eigen::Vector3d &pose,
-                           const Eigen::Vector3d &vel) {
+                           const Eigen::Vector3d &vel,
+                           const ModelParams &params)
+    : p(params) {
   eta = pose;
   nu = vel;
   C = Eigen::Matrix3d::Zero();
@@ -14,9 +16,9 @@ DynamicModel::DynamicModel(const Eigen::Vector3d &pose,
   eta_dot_last = Eigen::Vector3d::Zero();
   nu_dot_last = Eigen::Vector3d::Zero();
 
-  M << m - X_u_dot, 0, 0,                //
-      0, m - Y_v_dot, m * xg - Y_r_dot,  //
-      0, m * xg - Y_r_dot, Iz - N_r_dot; //
+  M << p.m - p.X_u_dot, 0, 0,                    //
+      0, p.m - p.Y_v_dot, p.m * p.xg - p.Y_r_dot,  //
+      0, p.m * p.xg - p.N_v_dot, p.Iz - p.N_r_dot; //
   M_inv = M.inverse();
 }
 
@@ -45,12 +47,12 @@ State DynamicModel::update_with_perturb(Eigen::Vector3d F,
 
   // nu_dot = M.inverse() * (F - C * nu - D * nu);
   nu_dot = dyn.f + dyn.g * F;
-  nu = integral_step * (nu_dot + nu_dot_last) / 2 + nu; // integral
+  nu = p.integral_step * (nu_dot + nu_dot_last) / 2 + nu; // integral
   nu_dot_last = nu_dot;
   // Because of estimated coefficients, some configurations might cause the ASV
   // to diverge. Clamping the dynamics mitigates it.
-  nu(0) = std::clamp(nu(0), max_astern, max_surge);
-  nu(2) = std::clamp(nu(2), -max_yaw, max_yaw);
+  nu(0) = std::clamp(nu(0), p.max_astern, p.max_surge);
+  nu(2) = std::clamp(nu(2), -p.max_yaw, p.max_yaw);
 
   Eigen::Matrix3d J;
   Eigen::Vector3d eta_dot;
@@ -58,7 +60,7 @@ State DynamicModel::update_with_perturb(Eigen::Vector3d F,
       std::cos(eta(2)), 0, 0, 0, 1;
 
   eta_dot = J * nu; // transformation into local reference frame
-  eta = integral_step * (eta_dot + eta_dot_last) / 2 + eta; // integral
+  eta = p.integral_step * (eta_dot + eta_dot_last) / 2 + eta; // integral
   eta_dot_last = eta_dot;
 
   // Printing for debug
@@ -97,10 +99,10 @@ DecomposedDyn DynamicModel::get_decomposed_dyn(const Eigen::Vector3d &nu_) {
   DecomposedDyn out{};
   Eigen::Matrix3d C_RB, C_A;
   auto [surge, sway, yaw] = std::make_tuple(nu_.x(), nu_.y(), nu_.z());
-  double c0 = m * (xg * yaw + sway);
-  double c1 = m * surge;
-  double c2 = Y_v_dot * sway + Y_r_dot * yaw;
-  double c3 = X_u_dot * surge;
+  double c0 = p.m * (p.xg * yaw + sway);
+  double c1 = p.m * surge;
+  double c2 = p.Y_v_dot * sway + p.Y_r_dot * yaw;
+  double c3 = p.X_u_dot * surge;
 
   C_RB << 0, 0, -c0, //
       0, 0, c1,      //
@@ -116,11 +118,11 @@ DecomposedDyn DynamicModel::get_decomposed_dyn(const Eigen::Vector3d &nu_) {
   auto [surge_abs, sway_abs, yaw_abs] =
       std::make_tuple(nu_abs.x(), nu_abs.y(), nu_abs.z());
   yaw_abs = 0.0; // Simplified for large boats (7.24)
-  double d0 = -Xuu * surge_abs;
-  double d1 = -Yvv * sway_abs - Yrv * yaw_abs;
-  double d2 = -Yvr * sway_abs - Yrr * yaw_abs;
-  double d3 = -Nvv * sway_abs - Nrv * yaw_abs;
-  double d4 = -Nvr * sway_abs - Nrr * yaw_abs;
+  double d0 = -p.Xuu * surge_abs;
+  double d1 = -p.Yvv * sway_abs - p.Yrv * yaw_abs;
+  double d2 = -p.Yvr * sway_abs - p.Yrr * yaw_abs;
+  double d3 = -p.Nvv * sway_abs - p.Nrv * yaw_abs;
+  double d4 = -p.Nvr * sway_abs - p.Nrr * yaw_abs;
 
   D << d0, 0, 0, //
       0, d1, d2, //

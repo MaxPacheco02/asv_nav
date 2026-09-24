@@ -6,7 +6,8 @@ AITSMC_XYH::AITSMC_XYH(const AITSMC_XYH_Params &params) : p(params) {
   beta << p.x.beta, p.y.beta, p.psi.beta;
 }
 
-Azimuth AITSMC_XYH::update(const State &state, const State &setpoint) {
+Eigen::Vector3d AITSMC_XYH::compute_tau(const State &state,
+                                        const State &setpoint) {
   Eigen::Matrix3d J = rotation_matrix(state.psi);
   Eigen::Matrix3d J_inv = J.transpose();
   Eigen::Matrix3d J_dot = rotation_matrix_dot(state.psi, state.r);
@@ -60,7 +61,7 @@ Azimuth AITSMC_XYH::update(const State &state, const State &setpoint) {
                           eps.cwiseProduct(K).cwiseProduct(s.cwiseAbs());
 
   // DYNAMICS
-  DecomposedDyn dyn = model.get_decomposed_dyn(nu);
+  DecomposedDyn dyn = model->get_decomposed_dyn(nu);
 
   // CONTROL SIGNAL
   Eigen::Vector3d U =
@@ -69,38 +70,10 @@ Azimuth AITSMC_XYH::update(const State &state, const State &setpoint) {
                 alpha.cwiseProduct(e_i_dot) - U_aux) -
        dyn.f);
 
-  // ALLOCATE FORCES
-  Azimuth out;
-  double Tx = U(0);
-  double Ty = U(1);
-  double Tz = U(2);
-
-  // Split Tx evenly between front and back thrusters
-  double Fx0 = Tx / 2.0;
-  double Fx1 = Tx / 2.0;
-
-  // Solve for Fy0 and Fy1 to satisfy both Ty and Tz
-  // Since model.lx1 = -model.lx0, Tz = model.lx0 * (Fy0 - Fy1)
-  double Fy0 = (Ty + Tz / model.lx0) / 2.0;
-  double Fy1 = (Ty - Tz / model.lx0) / 2.0;
-
-  out.force0 = std::hypot(Fx0, Fy0);
-  out.force1 = std::hypot(Fx1, Fy1);
-  out.ang0 = std::atan2(Fy0, Fx0);
-  out.ang1 = std::atan2(Fy1, Fx1);
-
-  // Clamp forces
-  if (out.force0 > model.u_max || out.force1 > model.u_max) {
-    double max_f = std::max(out.force0, out.force1);
-    double scale = model.u_max / max_f;
-    out.force0 *= scale;
-    out.force1 *= scale;
-  }
-
   // Printing for debug
   Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
   std::cout << "Thrust:\n"
-            << Eigen::Vector3d{Tx, 0, Tz}.format(fmt) << "\n"
+            << Eigen::Vector3d{U(0), 0, U(2)}.format(fmt) << "\n"
             << "s:\n"
             << s.format(fmt) << "\n"
             << "U_aux:\n"
@@ -123,5 +96,38 @@ Azimuth AITSMC_XYH::update(const State &state, const State &setpoint) {
     debugData[i].K = K(i);
     debugData[i].U = U(i);
   }
+  return U;
+}
+
+Azimuth AITSMC_XYH::update(const State &state, const State &setpoint) {
+  // ALLOCATE FORCES
+  Azimuth out;
+  Eigen::Vector3d U = compute_tau(state, setpoint);
+  double Tx = U(0);
+  double Ty = U(1);
+  double Tz = U(2);
+
+  // Split Tx evenly between front and back thrusters
+  double Fx0 = Tx / 2.0;
+  double Fx1 = Tx / 2.0;
+
+  // Solve for Fy0 and Fy1 to satisfy both Ty and Tz
+  // Since model.lx1 = -model.lx0, Tz = model.lx0 * (Fy0 - Fy1)
+  double Fy0 = (Ty + Tz / model->lx0) / 2.0;
+  double Fy1 = (Ty - Tz / model->lx0) / 2.0;
+
+  out.force0 = std::hypot(Fx0, Fy0);
+  out.force1 = std::hypot(Fx1, Fy1);
+  out.ang0 = std::atan2(Fy0, Fx0);
+  out.ang1 = std::atan2(Fy1, Fx1);
+
+  // Clamp forces
+  if (out.force0 > model->u_max || out.force1 > model->u_max) {
+    double max_f = std::max(out.force0, out.force1);
+    double scale = model->u_max / max_f;
+    out.force0 *= scale;
+    out.force1 *= scale;
+  }
+
   return out;
 }

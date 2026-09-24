@@ -1,0 +1,40 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    mpc_node = Node(
+        package="usv_nav",
+        executable="mpc_node",
+        # ros_arguments=["--log-level", "WARN"],
+    )
+
+    mpc_gui = Node(
+        package="asv_control",
+        executable="mpc_gui.py",
+        parameters=[
+            {"w_along": 0.05},
+            {"w_cross": 10.0},
+            {"w_heading": 100.0},
+            {"w_input": 0.1},
+            {"w_surge": 0.01},
+            {"w_sway": 0.01},
+            {"w_yaw": 0.01},
+            {"terminal_w": 10.0},
+            {"avoidance_w": 0.01},
+            {"mpc_tf_init": 5.0},
+            # Racing mode (worse tracking but fast):
+            # {"w_along": 30.0},
+            # {"w_cross": 5.0},
+            #
+            # If testing dynamic avoidance with many obstacles:
+            # {"w_along": 0.5},
+        ],
+    )
+
+    return LaunchDescription(
+        [
+            mpc_node,
+            mpc_gui,
+        ]
+    )

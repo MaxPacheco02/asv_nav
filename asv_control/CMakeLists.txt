@@ -56,6 +56,26 @@ ament_target_dependencies(sine_refs_node ${DEPENDENCIES})
 add_executable(rviz_refs_node src/debug/aitsmc/rviz_refs_node.cpp)
 ament_target_dependencies(rviz_refs_node ${DEPENDENCIES})
 
+# ======================
+# ||| Dynamic Model  |||
+# ======================
+
+add_library(dynamic_model src/dynamic_model.cpp)
+target_include_directories(dynamic_model PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(dynamic_model Eigen3)
+
+# ===============
+# ||| AITSMC  |||
+# ===============
+
+add_library(aitsmc src/AITSMC.cpp src/AITSMC_XYH.cpp src/AITSMC_SSY.cpp)
+target_include_directories(aitsmc PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(aitsmc dynamic_model)
+
 # ==================
 # ||| CatmulRom  |||
 # ==================
@@ -96,7 +116,7 @@ ament_target_dependencies(mpc_node ${DEPENDENCIES})
 target_link_libraries(mpc_node catmul_rom acados hpipm blasfeo m)
 
 install(
-  TARGETS catmul_rom
+  TARGETS catmul_rom dynamic_model aitsmc
   EXPORT asv_control_targets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

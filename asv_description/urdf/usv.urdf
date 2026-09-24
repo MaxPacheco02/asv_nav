@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
-<robot name="asv" xmlns:xacro="http://ros.org/wiki/xacro">
+<robot name="usv" xmlns:xacro="http://ros.org/wiki/xacro">
 
-  <link name="asv">
+  <link name="usv">
     <visual>
       <!-- <origin rpy="0 0 0" xyz="-0.5 0 0.15"/> -->
       <!-- <origin rpy="0 0 0" xyz="0 0 0.15"/> -->
-      <origin rpy="1.5708 0 0" xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="-0.25 0 0.15"/>
       <geometry>
-        <mesh filename="package://asv_description/models/asv/ferry_shape.STL" scale="1 0.1 0.167"/>
+        <mesh filename="package://asv_description/models/usv/meshes/asv.dae" scale="1 1 1"/>
       </geometry>
     </visual>
   </link>

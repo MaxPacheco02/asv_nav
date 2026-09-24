@@ -14,6 +14,8 @@ public:
   AITSMC_XYH(const AITSMC_XYH_Params &params);
 
   Azimuth update(const State &s, const State &setpoint);
+  // Generalized force [X, Y, N] demanded by the control law
+  Eigen::Vector3d compute_tau(const State &s, const State &setpoint);
 
 private:
   AITSMC_XYH_Params p;
