@@ -15,6 +15,7 @@
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -78,6 +79,33 @@ public:
           dyn_idx = (dyn_idx + 1) % dyn_obs_n;
         });
 
+    // vtec_s3 (gz sim) is just another obstacle. Its odometry comes in the
+    // zeroed world frame with a world-frame twist (odom_converter_node).
+    vtec_s3_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/vtec_s3/state/odom", 10, [this](const nav_msgs::msg::Odometry &msg) {
+          double x = msg.pose.pose.position.x;
+          double y = msg.pose.pose.position.y;
+          double v_x = msg.twist.twist.linear.x;
+          double v_y = msg.twist.twist.linear.y;
+          auto &q = msg.pose.pose.orientation;
+          double psi = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
+                                  1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+
+          if (vtec_s3_id < 0) {
+            vtec_s3_id = obs_.obs_list.size();
+            obs_.obs_list.push_back(build_obs(x, y, v_x, v_y));
+            marker_arr.markers.push_back(
+                build_marker(marker_arr.markers.size(), x, y, psi));
+            return;
+          }
+          obs_.obs_list[vtec_s3_id] = build_obs(x, y, v_x, v_y);
+          marker_arr.markers[vtec_s3_id].pose.position.x = x;
+          marker_arr.markers[vtec_s3_id].pose.position.y = y;
+          tf2::Quaternion q_m;
+          q_m.setRPY(0, 0, psi);
+          marker_arr.markers[vtec_s3_id].pose.orientation = tf2::toMsg(q_m);
+        });
+
     timer_ = this->create_wall_timer(
         50ms, std::bind(&ObstaclePublisher::timer_callback, this));
 
@@ -130,6 +158,7 @@ private:
   rclcpp::Subscription<asv_interfaces::msg::ObstacleList>::SharedPtr obs_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr pose_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr dyn_obs_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr vtec_s3_sub_;
 
   asv_interfaces::msg::ObstacleList near_obs_, obs_;
   visualization_msgs::msg::MarkerArray near_marker_arr, marker_arr;
@@ -154,6 +183,7 @@ private:
   };
   int dyn_idx{0};
   int dyn_obs_id[dyn_obs_n];
+  int vtec_s3_id{-1}; // Index in obs_ once its odometry arrives
 
   int color_list[6][4]{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1},
                        {1, 1, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}};

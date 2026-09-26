@@ -184,8 +184,8 @@ def export_usv_model() -> USVAcadosModel:
     C_RB[2, 0] = c0
     C_RB[2, 1] = -c1
 
-    c2 = 2.0 * (Y_v_dot * sway + 0.5 * (Y_r_dot + N_v_dot) * yaw)
-    c3 = X_u_dot * m * surge
+    c2 = Y_v_dot * sway + 0.5 * (Y_r_dot + N_v_dot) * yaw
+    c3 = X_u_dot * surge
     C_A = SX.zeros(3, 3)
     C_A[0, 2] = c2
     C_A[1, 2] = -c3

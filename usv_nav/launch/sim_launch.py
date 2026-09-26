@@ -53,7 +53,12 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            dynamic_model_node,
+            # Either dynamic_model
+            # dynamic_model_node,
+            # or Gazebo
+            include("usv_nav", "gazebo_launch.py"),
+            #
+            #
             include("usv_nav", "aitsmc_launch.py"),
             spline_publisher_node,
             obstacle_publisher,

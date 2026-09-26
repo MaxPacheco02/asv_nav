@@ -62,8 +62,8 @@ DecomposedDyn UsvDynamicModel::get_decomposed_dyn(const Eigen::Vector3d &nu_) {
   auto [surge, sway, yaw] = std::make_tuple(nu_.x(), nu_.y(), nu_.z());
   double c0 = p.m * (p.xg * yaw + sway);
   double c1 = p.m * surge;
-  double c2 = 2.0 * (p.Y_v_dot * sway + 0.5 * (p.Y_r_dot + p.N_v_dot) * yaw);
-  double c3 = p.X_u_dot * p.m * surge;
+  double c2 = p.Y_v_dot * sway + 0.5 * (p.Y_r_dot + p.N_v_dot) * yaw;
+  double c3 = p.X_u_dot * surge;
 
   C_RB << 0, 0, -c0, //
       0, 0, c1,      //

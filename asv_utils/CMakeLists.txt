@@ -40,8 +40,14 @@ add_executable(csv_path_publisher_node src/csv_path_publisher_node.cpp)
 ament_target_dependencies(csv_path_publisher_node rclcpp nav_msgs geometry_msgs
                           tf2 tf2_geometry_msgs)
 
-install(TARGETS obstacle_publisher csv_path_publisher_node
-        DESTINATION lib/${PROJECT_NAME})
+add_executable(odom_converter_node src/odom_converter_node.cpp)
+ament_target_dependencies(odom_converter_node ${DEPENDENCIES})
+
+add_executable(killswitch_node src/killswitch_node.cpp)
+ament_target_dependencies(killswitch_node ${DEPENDENCIES})
+
+install(TARGETS odom_converter_node killswitch_node obstacle_publisher
+                csv_path_publisher_node DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
