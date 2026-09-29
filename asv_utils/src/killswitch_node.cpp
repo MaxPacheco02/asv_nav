@@ -21,15 +21,17 @@ public:
         "/usv/thrust", 10, [this](const asv_interfaces::msg::Thrust &msg) {
           if (std::isnan(msg.force0) || std::isnan(msg.force1))
             return;
-          left.data = msg.force0;
-          right.data = msg.force1;
+	    double force_scale = 1.0;
+          left.data = force_scale*msg.force0;
+          right.data = force_scale*msg.force1;
           last_thrust_msg = this->get_clock()->now();
         });
 
     obs_twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10, [this](const geometry_msgs::msg::Twist &msg) {
-          left_obs.data = 200 * (msg.linear.x + msg.angular.z / 2);
-          right_obs.data = 200 * (msg.linear.x - msg.angular.z / 2);
+	double ang_reductor = 0.2;
+          left_obs.data = 20 * (msg.linear.x + ang_reductor*msg.angular.z / 2);
+          right_obs.data = 20 * (msg.linear.x - ang_reductor*msg.angular.z / 2);
         });
 
     left_pub_ = this->create_publisher<std_msgs::msg::Float64>(
@@ -37,9 +39,9 @@ public:
     right_pub_ = this->create_publisher<std_msgs::msg::Float64>(
         "/model/usv/joint/right_engine_propeller_joint/cmd_thrust", 10);
     left_obs_pub_ = this->create_publisher<std_msgs::msg::Float64>(
-        "/model/vtec_s3/joint/left_engine_propeller_joint/cmd_thrust", 10);
+        "/model/usv2/joint/left_engine_propeller_joint/cmd_thrust", 10);
     right_obs_pub_ = this->create_publisher<std_msgs::msg::Float64>(
-        "/model/vtec_s3/joint/right_engine_propeller_joint/cmd_thrust", 10);
+        "/model/usv2/joint/right_engine_propeller_joint/cmd_thrust", 10);
 
     service = this->create_service<std_srvs::srv::Empty>(
         "auto", std::bind(&KillSwitchSimNode::autonomous, this, _1, _2));

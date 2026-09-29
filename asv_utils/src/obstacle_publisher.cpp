@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <eigen3/Eigen/Dense>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <vector>
 
 #include "asv_interfaces/msg/obstacle.hpp"
 #include "asv_interfaces/msg/obstacle_list.hpp"
@@ -47,6 +49,29 @@ public:
         area[i] = bouncing_area[i];
     }
 
+    // Number of randomly initialized dynamic obstacles. Zero is valid: the
+    // usv2 (if its odometry shows up) is still published as an obstacle, and
+    // the near list is padded with dummies up to near_obs_n.
+    this->declare_parameter<int>("n_dyn_obs", 6);
+    int n_dyn_obs = static_cast<int>(this->get_parameter("n_dyn_obs").as_int());
+    if (n_dyn_obs < 0) {
+      RCLCPP_WARN(this->get_logger(),
+                  "n_dyn_obs is negative (%d). Using 0 instead", n_dyn_obs);
+      n_dyn_obs = 0;
+    }
+
+    // Where the padding obstacles are parked. It must sit well outside the
+    // operating area, but not so far that the MPC's ellipse constraint
+    // ((d / a_ellipse)^2, bounded above by 1e6) blows up.
+    this->declare_parameter<std::vector<double>>(
+        "dummy_obs_pos", std::vector<double>{1000.0, 1000.0});
+    auto dummy_pos = this->get_parameter("dummy_obs_pos").as_double_array();
+    if (dummy_pos.size() != 2) {
+      RCLCPP_WARN(this->get_logger(),
+                  "dummy_obs_pos needs 2 values [x, y]. Using the default");
+      dummy_pos = {1000.0, 1000.0};
+    }
+
     near_obs_pub_ = this->create_publisher<asv_interfaces::msg::ObstacleList>(
         "/mpc/near_obs", 10);
 
@@ -68,6 +93,13 @@ public:
     dyn_obs_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/rviz/dyn_obs", 1,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+          if (dyn_obs.empty()) {
+            RCLCPP_WARN_THROTTLE(
+                this->get_logger(), *this->get_clock(), 5000,
+                "Got a dynamic obstacle pose but n_dyn_obs is 0. Ignoring it");
+            return;
+          }
+
           auto &q = msg->pose.orientation;
           double ang = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
                                   1.0 - 2.0 * (q.y * q.y + q.z * q.z));
@@ -76,13 +108,13 @@ public:
           dyn_obs[dyn_idx][1] = msg->pose.position.y;
           dyn_obs[dyn_idx][2] = max_vel * cos(ang);
           dyn_obs[dyn_idx][3] = max_vel * sin(ang);
-          dyn_idx = (dyn_idx + 1) % dyn_obs_n;
+          dyn_idx = (dyn_idx + 1) % dyn_obs.size();
         });
 
     // vtec_s3 (gz sim) is just another obstacle. Its odometry comes in the
     // zeroed world frame with a world-frame twist (odom_converter_node).
     vtec_s3_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/vtec_s3/state/odom", 10, [this](const nav_msgs::msg::Odometry &msg) {
+        "/usv2/state/odom", 10, [this](const nav_msgs::msg::Odometry &msg) {
           double x = msg.pose.pose.position.x;
           double y = msg.pose.pose.position.y;
           double v_x = msg.twist.twist.linear.x;
@@ -111,33 +143,28 @@ public:
 
     dummy_obs.color = 5;
     dummy_obs.type = "NaN";
+    dummy_obs.x = dummy_pos[0];
+    dummy_obs.y = dummy_pos[1];
 
     // Initialize random dynamic obstacles
     // Seed RNG
     std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<double> dist_x(area[1],
-                                                  area[0]); // -50 to 1500
-    std::uniform_real_distribution<double> dist_y(area[2],
-                                                  area[3]); // -200 to 200
+    std::uniform_real_distribution<double> dist_x(area[0], area[1]);
+    std::uniform_real_distribution<double> dist_y(area[2], area[3]);
     std::uniform_real_distribution<double> dist_vx(-max_vel, max_vel);
     std::uniform_real_distribution<double> dist_vy(-max_vel, max_vel);
 
     double l = 50 * marker_scale;
     large_scale =
         geometry_msgs::build<geometry_msgs::msg::Vector3>().x(l).y(l).z(l);
-    for (int i = 0; i < dyn_obs_n; i++) {
-      dyn_obs[i][0] = dist_x(rng);
-      dyn_obs[i][1] = dist_y(rng);
-      dyn_obs[i][2] = dist_vx(rng);
-      dyn_obs[i][3] = dist_vy(rng);
-    }
-
-    for (int i = 0; i < dyn_obs_n; i++) {
-
-      double x = dyn_obs[i][0];
-      double y = dyn_obs[i][1];
-      double v_x = dyn_obs[i][2];
-      double v_y = dyn_obs[i][3];
+    dyn_obs.resize(n_dyn_obs);
+    dyn_obs_id.resize(n_dyn_obs);
+    for (size_t i = 0; i < dyn_obs.size(); i++) {
+      double x = dist_x(rng);
+      double y = dist_y(rng);
+      double v_x = dist_vx(rng);
+      double v_y = dist_vy(rng);
+      dyn_obs[i] = {x, y, v_x, v_y};
 
       dyn_obs_id[i] = obs_.obs_list.size();
       obs_.obs_list.push_back(build_obs(x, y, v_x, v_y));
@@ -173,16 +200,15 @@ private:
 
   double max_vel{10.0};
   double marker_scale{1.0};
-  static const int dyn_obs_n{6};
+  // Obstacles published on /mpc/near_obs. The mpc_node (asv_control, usv_nav)
+  // reads exactly N_OBS = 3 of them, so shorter lists are padded with dummies.
+  static constexpr size_t near_obs_n{3};
   // x min, x max, y min, y max
   double area[4]{-1000, 4500, -1400, 1400};
-  double dyn_obs[dyn_obs_n][4]{
-      {100., 2., -10.20, 1.0},
-      {100., 0., 3.0, 4.0},
-      {0., -50., 3.5, 2.0},
-  };
-  int dyn_idx{0};
-  int dyn_obs_id[dyn_obs_n];
+  // [x, y, v_x, v_y] per dynamic obstacle. Sized by the n_dyn_obs parameter.
+  std::vector<std::array<double, 4>> dyn_obs;
+  std::vector<size_t> dyn_obs_id;
+  size_t dyn_idx{0};
   int vtec_s3_id{-1}; // Index in obs_ once its odometry arrives
 
   int color_list[6][4]{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1},
@@ -236,9 +262,6 @@ private:
   void timer_callback() {
     update_dyn();
 
-    if (obs_.obs_list.empty())
-      return;
-
     std::vector<std::pair<double, int>> obs_dist_v;
     for (size_t i = 0; i < obs_.obs_list.size(); i++) {
       obs_dist_v.push_back(
@@ -249,7 +272,7 @@ private:
     near_obs_.obs_list.clear();
     near_marker_arr.markers.clear();
     size_t i = 0;
-    while (near_obs_.obs_list.size() < 3) {
+    while (near_obs_.obs_list.size() < near_obs_n) {
       if (i < obs_dist_v.size()) {
         int idx = obs_dist_v[i].second;
         near_obs_.obs_list.push_back(obs_.obs_list[idx]);
@@ -272,7 +295,7 @@ private:
 
   void update_dyn() {
     double dt = 0.05;
-    for (int i = 0; i < dyn_obs_n; i++) {
+    for (size_t i = 0; i < dyn_obs.size(); i++) {
       dyn_obs[i][0] += dyn_obs[i][2] * dt;
       dyn_obs[i][1] += dyn_obs[i][3] * dt;
 

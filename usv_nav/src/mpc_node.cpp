@@ -55,7 +55,7 @@ public:
     sol_path_msg.header.frame_id = frame_id;
     sol_array_msg.header.frame_id = frame_id;
 
-    sol_path_msg.poses.resize(N_HORIZON + 1);
+    sol_path_msg.poses.resize(sol_path_length);
     sol_array_msg.poses.resize(sol_array_length);
 
     init_acados_solver();
@@ -70,7 +70,7 @@ public:
   }
 
 private:
-  static constexpr double TF = 10.0; // seconds
+  static constexpr double TF = 50.0; // seconds
   static constexpr int N_HORIZON =
       USV_DYNAMICS_N; // Assuming this macro comes from ACADOS
   static constexpr double DT = TF / N_HORIZON;
@@ -86,8 +86,23 @@ private:
   static constexpr double T_NORM_MIN = -30.0 / 36.5; // T_MIN / T_MAX
   static constexpr int n_points = 20;
   static constexpr const char *frame_id = "world";
-  static constexpr int sol_array_length = 10;
+  static constexpr int sol_array_length = 5;
+  static constexpr int sol_path_length = 50;
   static constexpr int ellipse_points = 50;
+
+  // Envelope for the published reference. The first four mirror the OCP state
+  // bounds in usv_mpc.py; the last is a world-frame sanity bound. The AITSMC
+  // raises the velocity error to a power (alpha up to ~4.4) and calls
+  // rclcpp::shutdown() on a NaN thrust, so a single oversized setpoint ends
+  // the run: it must never leave this node.
+  static constexpr double REF_U_MIN = -1.5, REF_U_MAX = 2.0; // SURGE_MIN/MAX
+  static constexpr double REF_V_ABS = 0.5;                   // |SWAY_MIN/MAX|
+  static constexpr double REF_R_ABS = 3.0;                   // |YAW_MIN/MAX|
+  static constexpr double REF_POS_ABS = 1.0e4;               // m from origin
+  // How far past the envelope a solution may land before it is called garbage
+  // rather than aggressive. The state bounds are soft in the OCP, so small
+  // excursions are legitimate.
+  static constexpr double REF_SANITY_FACTOR = 3.0;
 
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sol_path_pub_,
       obs_path_pub_;
@@ -114,6 +129,9 @@ private:
       enabled_param_handle_, tf_param_handle_;
 
   asv_interfaces::msg::State ref_msg;
+  // Last reference that passed the checks below. Zero-initialized, so the
+  // fallback is "hold position, no motion" even before the first good solve.
+  asv_interfaces::msg::State last_good_ref;
   std_msgs::msg::Float64 sol_time_msg, debug_ae_msg, debug_ce_msg, debug_he_msg,
       debug_min_d_msg;
   nav_msgs::msg::Path sol_path_msg;
@@ -121,7 +139,7 @@ private:
   std_msgs::msg::Float64MultiArray debug_weights_msg;
 
   Eigen::Vector3d nu_ref;
-  Eigen::Vector3d nu_alpha{0., 0., 0.};
+  Eigen::Vector3d nu_alpha{0.1, 0.1, 0.1};
 
   double along_e{0.0}, cross_e{0.0}, obs_d{std::numeric_limits<double>::max()};
 
@@ -129,7 +147,7 @@ private:
   // w_avoidance
   std::vector<double> mpc_weights{0.05, 10.0, 100.0, 0.1, 0.01,
                                   0.01, 0.01, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{2.0, 0.5, 10.0, 1.0, 1.0,
+  std::vector<double> tracking_to_avoid{5.0, 0.2, 0.4, 1.0, 1.0,
                                         1.0, 1.0, 1.0,  1.0};
   std::vector<double> avoidance_weights{0.1,  5.0,  1000.0, 0.1, 0.01,
                                         0.01, 0.01, 10.0,   0.01};
@@ -137,7 +155,7 @@ private:
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 1.0, ae_end = 0.5;
   static constexpr double min_ce = 0.5, max_ce = 3.0;
-  static constexpr double avoidance_start = 6.0, avoidance_end = 2.5;
+  static constexpr double avoidance_start = 3.0, avoidance_end = 1.0;
   // Max weight change per 50 ms control cycle. w_avo ramps,
   // preventing the RTI QP from seeing a discontinuous cost Hessian.
   static constexpr double max_w_rate = 1.0;
@@ -145,8 +163,8 @@ private:
   // states, not just OCP params.
   static constexpr double obs_reorder_threshold = 2.0;
 
-  double tracking_weights_dynamics[N_WP]{10.0, 10.0, 5.0,  1.0, 10.0,
-                                         1.0,  1.0,  10.0, 1.0};
+  double tracking_weights_dynamics[N_WP]{1.0, 1.0, 1.0,  1.0, 1.0,
+                                         1.0,  1.0,  1.0, 1.0};
   int warmup_count{0};
   static constexpr int WARMUP_ITERS = 5;
 
@@ -252,11 +270,28 @@ private:
     // Get optimal control
     ocp_nlp_out_get(nlp_config, nlp_dims, nlp_out, 0, "u", simU);
 
+    // A diverging RTI step does not reliably announce itself: the run that
+    // killed the AITSMC published surge/yaw references of ~1e13 on a cycle
+    // whose status was NOT 4, and only the following cycle reported the QP
+    // failure. So the numbers are checked, not just the status.
+    // 0 = success, 2 = max iterations, 5 = ready; the same set the
+    // preparation phase above tolerates. Everything else (1 NaN detected,
+    // 3 min step, 4 QP failure, 6 unbounded, 7 timeout) is a failure.
+    bool status_ok = (status == 0 || status == 2 || status == 5);
+    bool solver_ok = status_ok && all_finite(simU, NU);
+    if (!solver_ok && status != 4)
+      RCLCPP_WARN(this->get_logger(),
+                  "Rejecting solution: status=%d, finite_u=%d", status,
+                  static_cast<int>(all_finite(simU, NU)));
+
     // Thrusts are MPC-internal states: advance them with the applied rates
-    // over one control period, as the plant integrator does in usv_mpc.py
-    for (int i : {0, 1})
-      x0[IDX_TPORT + i] =
-          std::clamp(x0[IDX_TPORT + i] + simU[i] * CONTROL_DT, T_NORM_MIN, 1.0);
+    // over one control period, as the plant integrator does in usv_mpc.py.
+    // Only with a usable rate: std::clamp propagates NaN, so one bad simU
+    // would pin x0 at NaN for the rest of the run.
+    if (solver_ok)
+      for (int i : {0, 1})
+        x0[IDX_TPORT + i] = std::clamp(x0[IDX_TPORT + i] + simU[i] * CONTROL_DT,
+                                       T_NORM_MIN, 1.0);
 
     auto end_t = std::chrono::high_resolution_clock::now();
     sol_time_msg.data = std::chrono::duration<double>(end_t - start_t).count();
@@ -277,7 +312,6 @@ private:
       q.setRPY(0, 0, xtraj[i * NX + 2]);
       tmp_pose.pose.orientation = tf2::toMsg(q);
 
-      sol_path_msg.poses[i] = tmp_pose;
 
       for (int j = 0; j < 3; j++) {
         obs_pose.pose.position.x = xtraj[i * NX + 7 + j * 2];
@@ -286,25 +320,47 @@ private:
         if (dist < min_obs_predicted_d)
           min_obs_predicted_d = dist;
       }
-      if (i % stride == 0 && i / stride < sol_array_length) {
-        sol_array_msg.poses[i / stride] = tmp_pose.pose;
+      // if (i % stride == 0 && i / stride < sol_array_length) {
+      if (i < sol_array_length) {
+        sol_array_msg.poses[i] = tmp_pose.pose;
+      }
+      if (i < sol_path_length) {
+        sol_path_msg.poses[i] = tmp_pose;
       }
     }
     publish_obs_marker(xtraj);
     obs_predicted_d = min_obs_predicted_d;
 
+    if (solver_ok && !all_finite(xtraj, NX * (N_HORIZON + 1))) {
+      solver_ok = false;
+      RCLCPP_WARN(this->get_logger(),
+                  "Solution trajectory has non-finite values (status=%d)",
+                  status);
+    }
+
     double REF_LOOKAHEAD = 0.5; // s. Get reference at this time.
     int sol_idx = std::clamp(
         static_cast<int>(std::round(REF_LOOKAHEAD / (mpc_tf / N_HORIZON))), 1,
         N_HORIZON);
-    filter_sol(Eigen::Vector3d{xtraj[sol_idx * NX + 3], xtraj[sol_idx * NX + 4],
-                               xtraj[sol_idx * NX + 5]});
-    ref_msg.x = xtraj[sol_idx * NX + 0];
-    ref_msg.y = xtraj[sol_idx * NX + 1];
-    ref_msg.psi = xtraj[sol_idx * NX + 2];
-    ref_msg.u = nu_ref(0);
-    ref_msg.v = nu_ref(1);
-    ref_msg.r = nu_ref(2);
+    const double *x_ref = &xtraj[sol_idx * NX];
+
+    if (solver_ok && !in_sanity_envelope(x_ref)) {
+      solver_ok = false;
+      RCLCPP_WARN(this->get_logger(),
+                  "Solution outside the sanity envelope (status=%d): "
+                  "pos=(%.3g, %.3g) u=%.3g v=%.3g r=%.3g. Holding",
+                  status, x_ref[0], x_ref[1], x_ref[3], x_ref[4], x_ref[5]);
+    }
+
+    if (solver_ok) {
+      filter_sol(Eigen::Vector3d{x_ref[3], x_ref[4], x_ref[5]});
+      ref_msg.x = x_ref[0];
+      ref_msg.y = x_ref[1];
+      ref_msg.psi = x_ref[2];
+      ref_msg.u = nu_ref(0);
+      ref_msg.v = nu_ref(1);
+      ref_msg.r = nu_ref(2);
+    }
 
     debug_ce_msg.data = cross_e;
     debug_ae_msg.data = along_e;
@@ -320,7 +376,7 @@ private:
     sol_path_pub_->publish(sol_path_msg);
     sol_array_pub_->publish(sol_array_msg);
 
-    if (!mpc_enabled || status == 4) {
+    if (!mpc_enabled || !solver_ok) {
       RCLCPP_WARN(this->get_logger(), "MPC IS DISABLED (status=%d)", status);
       if (!mpc_broken) {
         mpc_broken = true;
@@ -332,6 +388,9 @@ private:
       ref_msg.u = 0.0;
       ref_msg.v = 0.0;
       ref_msg.r = 0.0;
+      // The smoothing filter keeps state across cycles: clear it so a bad
+      // solution cannot bleed into the next good one.
+      nu_ref.setZero();
 
       // Clear solver memory (a NaN persists in the multipliers otherwise),
       // then re-initialize all stages to current state
@@ -348,7 +407,7 @@ private:
       mpc_broken = false;
     }
 
-    ref_pub_->publish(ref_msg);
+    publish_reference();
     debug_ae_pub_->publish(debug_ae_msg);
     debug_ce_pub_->publish(debug_ce_msg);
     debug_he_pub_->publish(debug_he_msg);
@@ -413,6 +472,47 @@ private:
     return std::hypot(dx, dy);
   }
 
+  static bool all_finite(const double *v, int n) {
+    for (int i = 0; i < n; i++)
+      if (!std::isfinite(v[i]))
+        return false;
+    return true;
+  }
+
+  // Is this shooting node's state something the boat could plausibly be asked
+  // to track? psi is deliberately unbounded (it is fed unwrapped).
+  static bool in_sanity_envelope(const double *x) {
+    const double k = REF_SANITY_FACTOR;
+    return all_finite(x, 6) && std::abs(x[0]) < REF_POS_ABS &&
+           std::abs(x[1]) < REF_POS_ABS && x[3] > k * REF_U_MIN &&
+           x[3] < k * REF_U_MAX && std::abs(x[4]) < k * REF_V_ABS &&
+           std::abs(x[5]) < k * REF_R_ABS;
+  }
+
+  // Last line of defence. Whatever happened upstream, the AITSMC gets a finite
+  // reference inside the envelope: it shuts itself down on a NaN thrust, and
+  // its power-law terms turn a merely large setpoint into an infinite one.
+  void publish_reference() {
+    bool finite = std::isfinite(ref_msg.x) && std::isfinite(ref_msg.y) &&
+                  std::isfinite(ref_msg.psi) && std::isfinite(ref_msg.u) &&
+                  std::isfinite(ref_msg.v) && std::isfinite(ref_msg.r);
+    if (!finite) {
+      RCLCPP_ERROR(this->get_logger(),
+                   "Non-finite reference reached the publisher. Falling back "
+                   "to the last good pose with zero velocity");
+      ref_msg = last_good_ref;
+      ref_msg.u = ref_msg.v = ref_msg.r = 0.0;
+    }
+
+    // Clamp after the finiteness test: std::clamp propagates NaN.
+    ref_msg.u = std::clamp(ref_msg.u, REF_U_MIN, REF_U_MAX);
+    ref_msg.v = std::clamp(ref_msg.v, -REF_V_ABS, REF_V_ABS);
+    ref_msg.r = std::clamp(ref_msg.r, -REF_R_ABS, REF_R_ABS);
+
+    last_good_ref = ref_msg;
+    ref_pub_->publish(ref_msg);
+  }
+
   void filter_sol(const Eigen::Vector3d &new_sol) {
     nu_ref = nu_alpha.cwiseProduct(nu_ref) +
              (Eigen::Vector3d::Ones() - nu_alpha).cwiseProduct(new_sol);
@@ -436,7 +536,7 @@ private:
 
     // Effective dimensions from Python script
     double A_ELL_EFF = 2.5; // 1.5 length + safety radius
-    double B_ELL_EFF = 1.5; // 1.5 width + safety radius
+    double B_ELL_EFF = 1.5; // 0.5 width + safety radius
 
     for (int i = 0; i <= ellipse_points; i++) {
       // Calculate the angle for this point

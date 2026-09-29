@@ -33,7 +33,7 @@ def generate_launch_description():
         remappings=USV_REMAPS,
         parameters=[
             # Same control points as the usv_mpc.py scenario
-            {"waypoints": [-10.0, 0.0, -5.0, 0.0, 10.0, 20.0, 10.0, 30.0]},
+            {"waypoints": [0.0, 0.0, 0.3, 0.0, 3.0, 5.0, 7.0, 0.0, 6.0, -5.0, 7.0, -8.0, 1.0, -5.0, 0.5, -1.0, 0.0, -1.0]},
             {"marker_scale": 0.05},
             {"lookahead": 3.0},
         ],
@@ -48,6 +48,8 @@ def generate_launch_description():
             {"bouncing_area": [-15.0, 20.0, -10.0, 35.0]},
             {"marker_scale": 0.05},
             {"max_vel": 1.0},
+            {"n_dyn_obs": 2},
+            {"dummy_obs_pos": [1000.0, 1000.0]},
         ],
     )
 

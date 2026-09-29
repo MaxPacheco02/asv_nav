@@ -45,10 +45,10 @@ public:
     statePub = this->create_publisher<asv_interfaces::msg::State>("/usv/state", 10);
 
     // vtec_s3 (used as an obstacle), brought into the same zeroed frame
-    obsOdomSub = this->create_subscription<nav_msgs::msg::Odometry>("/vtec_s3/odometry", 10,
+    obsOdomSub = this->create_subscription<nav_msgs::msg::Odometry>("/gz_sim2/odometry", 10,
       std::bind(&OdomConverterNode::obs_odom_cb, this, _1));
 
-    obsOdomPub = this->create_publisher<nav_msgs::msg::Odometry>("/vtec_s3/state/odom", 10);
+    obsOdomPub = this->create_publisher<nav_msgs::msg::Odometry>("/usv2/state/odom", 10);
 
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 

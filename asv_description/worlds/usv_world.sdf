@@ -39,14 +39,15 @@
     </include>
 
     <include>
+      <name>usv</name>
       <pose>-3 0 0.1 0 0 0</pose>
       <uri>model://usv</uri>
     </include>
 
     <include>
-      <name>vtec_s3</name>
-      <pose>-3 3 0 0 0 0</pose>
-      <uri>vtec_s3</uri>
+      <name>usv2</name>
+      <pose>-3 3 0.1 0 0 0</pose>
+      <uri>model://usv2</uri>
     </include>
 
   </world>

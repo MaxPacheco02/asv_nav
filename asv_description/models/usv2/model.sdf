@@ -1,106 +1,37 @@
 <?xml version="1.0"?>
 <sdf version="1.6">
-  <model name="usv">
+  <model name="usv2">
     <link name="base_link">
-    <inertial>
-	    <pose>0.184 0.0005 -0.022 0 0 0</pose>
-	    <mass>46.2</mass>
-	    <inertia>
-		    <ixx>3.888</ixx>
-		    <ixy>-0.0066</ixy>
-		    <ixz>0.0651</ixz>
-		    <iyy>8.477</iyy>
-		    <iyz>-0.0005</iyz>
-		    <izz>10.656</izz>
-	    </inertia>
-    </inertial>
-    <visual name="visual">
+      <inertial>
+        <pose>0.2 0 0 0 0 0</pose>
+        <mass>45</mass>
+        <inertia>
+          <ixx>0.5666666666666668</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>1.0416666666666667</iyy>
+          <iyz>0</iyz>
+          <izz>1.5416666666666667</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
         <pose>-0.3 0 0 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://usv/meshes/asv.dae</uri>
+            <uri>file://vtec_s3/meshes/vtec_s3.dae</uri>
+	    <scale>0.1 0.1 0.1</scale>
           </mesh>
         </geometry>
       </visual>
 
       <collision name="Coll">
-        <pose>-0.3 0 0 1.5708 0 0</pose>
-        <geometry>
-          <mesh>
-            <!-- <scale>1.5 1 1</scale> -->
-            <uri>file://usv/meshes/hull_collision.glb</uri>
-          </mesh>
-        </geometry>
-      </collision>
-
-      <!-- <sensor name="imu" type="imu">
-        <pose>0.2 0.0 0.25 0 0 0</pose>
-        <always_on>1</always_on>
-        <update_rate>100</update_rate>
-      </sensor> -->
-
-      <!-- sensor name='gpu_lidar' type='gpu_lidar'>
-        <pose>0.2 0.0 0.55 0 0 0</pose>
-        <topic>lidar</topic>
-        <update_rate>20</update_rate>
-        <lidar>
-          <scan>
-            <horizontal>
-              <samples>640</samples>
-              <resolution>1</resolution>
-              <min_angle>-3.14</min_angle>
-              <max_angle>3.14</max_angle>
-            </horizontal>
-            <vertical>
-              <samples>16</samples>
-              <resolution>1</resolution>
-              <min_angle>-0.261799</min_angle>
-              <max_angle>0.261799</max_angle>
-            </vertical>
-          </scan>
-          <range>
-            <min>0.08</min>
-            <max>20.0</max>
-            <resolution>0.01</resolution>
-          </range>
-        </lidar>
-        <alwaysOn>1</alwaysOn>
-        <visualize>true</visualize>
-        <plugin
-          filename="RosGzPointCloud"
-          name="ros_gz_point_cloud::PointCloud">
-          <namespace>custom_params</namespace>
-          <topic>pc2</topic>
-          <frame_id>custom_params/link</frame_id>
-        </plugin>
-      </sensor>
-
-      <sensor name="rgbd_camera" type="rgbd_camera">
-        <pose>0.65 0 0.3 0 0 0</pose>
-        <camera>
-          <horizontal_fov>1.92</horizontal_fov>
-          <image>
-            <width>1280</width>
-            <height>720</height>
-          </image>
-          <clip>
-            <near>0.001</near>
-            <far>50</far>
-          </clip>
-        </camera>
-        <always_on>1</always_on>
-        <update_rate>30</update_rate>
-        <visualize>true</visualize>
-        <topic>zed_rgbd</topic>
-        <plugin
-          filename="RosGzPointCloud"
-          name="ros_gz_point_cloud::PointCloud">
-          <namespace>custom_params</namespace>
-          <topic>pc2</topic>
-          <frame_id>usv/base_link/rgbd_camera</frame_id>
-        </plugin>
-      </sensor -->
-
+	  <pose>0 0 0 0 0 0</pose>
+	  <geometry>
+	    <box>
+	      <size>1.3 0.65 0.3</size>
+	    </box>
+	  </geometry>
+	</collision>
     </link>
 
     <!-- Left thruster housing -->
@@ -122,7 +53,7 @@
         <pose>-0.3 0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://usv/meshes/housing.dae</uri>
+            <uri>file://usv2/meshes/housing.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -130,8 +61,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv2/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv2/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -166,7 +97,7 @@
         <pose>-0.3 0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://usv/meshes/prop.dae</uri>
+            <uri>file://usv2/meshes/prop.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -174,8 +105,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv2/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv2/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -210,7 +141,7 @@
         <pose>-0.3 -0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://usv/meshes/housing.dae</uri>
+            <uri>file://usv2/meshes/housing.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -218,8 +149,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv2/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv2/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -255,7 +186,7 @@
         <pose>-0.3 -0.28 -0.32 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://usv/meshes/prop.dae</uri>
+            <uri>file://usv2/meshes/prop.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -263,8 +194,8 @@
           <specular>1.0 1.0 1.0</specular>
           <pbr>
             <metal>
-              <albedo_map>file://usv/materials/textures/Thruster_Albedo.png</albedo_map>
-              <roughness_map>file://usv/materials/textures/Thruster_Roughness.png</roughness_map>
+              <albedo_map>file://usv2/materials/textures/Thruster_Albedo.png</albedo_map>
+              <roughness_map>file://usv2/materials/textures/Thruster_Roughness.png</roughness_map>
             </metal>
           </pbr>
         </material>
@@ -347,32 +278,87 @@
       <child>right_prop_link</child>
     </joint>
 
+    <!-- Left hull -->
+    <plugin
+      filename="libSurface.so"
+      name="vrx::Surface">
+      <link_name>base_link</link_name>
+      <hull_length>1.15</hull_length>
+      <hull_radius>0.12</hull_radius>
+      <fluid_level>0.1</fluid_level>
+      <points>
+        <point>0.68 0.204338 -0.1552701</point>
+        <point>-0.465 0.204338 -0.1552701</point>
+      </points>
+      <wavefield>
+        <topic>/vrx/wavefield/parameters</topic>
+      </wavefield>
+    </plugin>
+
+    <!-- Right hull -->
+    <plugin
+      filename="libSurface.so"
+      name="vrx::Surface">
+      <link_name>base_link</link_name>
+      <hull_length>1.15</hull_length>
+      <hull_radius>0.12</hull_radius>
+      <fluid_level>0.1</fluid_level>
+      <points>
+        <point>0.68 -0.204338 -0.1552701 </point>
+        <point>-0.465 -0.204338 -0.1552701 </point>
+      </points>
+      <wavefield>
+        <topic>/vrx/wavefield/parameters</topic>
+      </wavefield>
+    </plugin>
+
+    <plugin
+      filename="libSimpleHydrodynamics.so"
+      name="vrx::SimpleHydrodynamics">
+      <link_name>base_link</link_name>
+      <!-- Added mass -->
+      <xDotU>0.0</xDotU>
+      <yDotV>0.0</yDotV>
+      <nDotR>0.0</nDotR>
+      <!-- Linear and quadratic drag -->
+      <xU>4.0</xU>
+      <xUU>6.0</xUU>
+      <yV>4.0</yV>
+      <yVV>4.0</yVV>
+      <zW>20.0</zW>
+      <kP>12.0</kP>
+      <kPP>24.0</kPP>
+      <mQ>36.0</mQ>
+      <mQQ>35.0</mQQ>
+      <nR>32.0</nR>
+      <nRR>32.0</nRR>
+    </plugin>
+
     <plugin
       filename="gz-sim-thruster-system"
       name="gz::sim::systems::Thruster">
       <joint_name>left_engine_propeller_joint</joint_name>
+      <thrust_coefficient>0.0001</thrust_coefficient>
       <fluid_density>1000</fluid_density>
       <propeller_diameter>0.1</propeller_diameter>
-	<thrust_coefficient>0.06</thrust_coefficient>   <!-- 60 N ≈ 100 rad/s -->
-	<velocity_control>true</velocity_control>
+      <velocity_control>true</velocity_control>
     </plugin>
 
     <plugin
       filename="gz-sim-thruster-system"
       name="gz::sim::systems::Thruster">
       <joint_name>right_engine_propeller_joint</joint_name>
+      <thrust_coefficient>0.0001</thrust_coefficient>
       <fluid_density>1000</fluid_density>
       <propeller_diameter>0.1</propeller_diameter>
-      <!-- left -->
-	<thrust_coefficient>-0.06</thrust_coefficient>   <!-- 60 N ≈ 100 rad/s -->
-	<velocity_control>true</velocity_control>
+      <velocity_control>true</velocity_control>
     </plugin>
 
     <plugin
       filename="gz-sim-odometry-publisher-system"
       name="gz::sim::systems::OdometryPublisher">
       <odom_frame>world</odom_frame>
-      <odom_covariance_topic>/gz_sim/odometry</odom_covariance_topic>
+      <odom_covariance_topic>/gz_sim2/odometry</odom_covariance_topic>
     </plugin>
 
     <!-- Hydrodynamics plugin -->
@@ -380,7 +366,7 @@
       filename="gz-waves1-hydrodynamics-system"
       name="gz::sim::systems::Hydrodynamics">
 
-      <enable>usv::base_link</enable>
+      <enable>usv2::base_link</enable>
 
       <hydrodynamics>
         <damping_on>1</damping_on>
@@ -394,12 +380,12 @@
         <cDampR2>1.0E-6</cDampR2>
 
         <!-- 'Pressure' Drag -->
-        <cPDrag1>550</cPDrag1>
-        <cPDrag2>300</cPDrag2>
-        <fPDrag>1.0</fPDrag>
-        <cSDrag1>550</cSDrag1>
-        <cSDrag2>300</cSDrag2>
-        <fSDrag>1.0</fSDrag>
+        <cPDrag1>1.0E+2</cPDrag1>
+        <cPDrag2>1.0E+2</cPDrag2>
+        <fPDrag>0.4</fPDrag>
+        <cSDrag1>1.0E+2</cSDrag1>
+        <cSDrag2>1.0E+2</cSDrag2>
+        <fSDrag>0.4</fSDrag>
         <vRDrag>1.0</vRDrag>
       </hydrodynamics>
 
@@ -417,19 +403,19 @@
 
 <!--
 # Listening to the gz sim's topic
-gz topic -e -t /model/usv/joint/right_engine_propeller_joint/cmd_thrust
+gz topic -e -t /model/usv2/joint/right_engine_propeller_joint/cmd_thrust
 
 # Publishing to the gz sim's topic
-gz topic -t /model/usv/joint/right_engine_propeller_joint/cmd_thrust -m gz.msgs.Double -p 'data:10'
+gz topic -t /model/usv2/joint/right_engine_propeller_joint/cmd_thrust -m gz.msgs.Double -p 'data:10'
 
 # Running a ros2 <-> gz bridge
 ros2 run ros_gz_bridge parameter_bridge
-/model/usv/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
+/model/usv2/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
 ros2 run ros_gz_bridge parameter_bridge
-/model/usv/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
+/model/usv2/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64]gz.msgs.Double
 
 # Publishing a ros2 topic
-ros2 topic pub /model/usv/joint/left_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
-ros2 topic pub /model/usv/joint/right_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
+ros2 topic pub /model/usv2/joint/left_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
+ros2 topic pub /model/usv2/joint/right_engine_propeller_joint/cmd_thrust std_msgs/msg/Float64 "data: 15"
 
 -->

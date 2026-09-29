@@ -31,7 +31,7 @@ WARMUP_STEPS = 5
 A_ELLIPSE = 1.50  # longitudinal (bow-stern)
 B_ELLIPSE = 0.50  # lateral (beam)
 ELLIPSE_OFFSET = 0.0  # shift centre fore/aft if COG isn't midship
-R_SAFE_ELLIPSE = 1.0  # extra buffer added to both axes
+R_SAFE_ELLIPSE = 2.0  # extra buffer added to both axes
 
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE
@@ -59,7 +59,7 @@ T_CEIL_TOL = 1e-4
 # State bounds: surge, sway, yaw-rate
 # Physical surge limits (from vehicle specs): [-6.945, 5.9678] m/s
 # Tightened to avoid thruster force saturation
-SURGE_MIN, SURGE_MAX = -1.2, 1.5
+SURGE_MIN, SURGE_MAX = -1.5, 2.0
 SWAY_MIN, SWAY_MAX = -0.5, 0.5
 YAW_MIN, YAW_MAX = -3.0, 3.0
 
@@ -212,6 +212,12 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     ocp.model.cost_y_expr_0 = stage_res
 
     # --- Constraints ---
+    # The control box below is the only hard inequality in this OCP. It cannot
+    # make the QP infeasible (u is free, so a box on u is always satisfiable),
+    # whereas a hard bound on a *state* can: the plant state is pinned at node
+    # 0, and if it already sits outside the bound the first shooting node has
+    # no feasible point. HPIPM then returns status 4, which mpc_node latches
+    # into its breakdown branch. So every state-side bound here is soft.
     ocp.constraints.x0 = x0
 
     # Controls are thrust rates plus the spline rate.
@@ -226,6 +232,13 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     )
     ocp.constraints.ubx = np.array([SURGE_MAX, SWAY_MAX, YAW_MAX, 1.0, 1.0])
     ocp.constraints.idxbx = np.array([3, 4, 5, IDX_TPORT, IDX_TSTBD])
+
+    # Soften the velocity envelope (indices into idxbx, i.e. surge/sway/yaw).
+    # Those limits are a tuning preference, not physics, and a wave or a gust
+    # can put the plant past them at any moment. The thrust rows stay hard:
+    # their rate is the control, so the solver can always hold them in range,
+    # and mpc_node clamps the applied command to the same interval anyway.
+    ocp.constraints.idxsbx = np.array([0, 1, 2])
 
     # No control acts at the terminal node, so the path parameter and the
     # thrusts need their bounds restated there.
@@ -254,11 +267,35 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     # active segment with no help from the caller. On the last segment the
     # parameter may not pass the ceiling at all; otherwise it may run one
     # segment ahead, which is what lets the horizon see the second spline.
-    # Appended last so the obstacle indices (and idxsh) are unchanged.
+    # Appended last, after the obstacle rows.
     spline_ceil_p = model.p[P_SPLINE_CEIL]
     in_last_s_p = model.p[P_IN_LAST_S]
     h_t_expr = model.x[6] - spline_ceil_p - (1.0 - in_last_s_p)
     h_expr_list.append(h_t_expr)
+
+    n_h = OBS_N + 1  # obstacle ellipses + path-parameter ceiling
+
+    # Penalties. The obstacle and ceiling rows keep the heavy weights, so they
+    # behave like hard constraints right up to the point where holding them
+    # would have made the QP infeasible; the velocity envelope is cheaper,
+    # since crossing it is a tracking compromise rather than a failure.
+    L1_penalty = 1e4
+    L2_penalty = 1e5
+    VEL_L1_penalty = 1e3
+    VEL_L2_penalty = 1e3
+    TINY_PENALTY = 1e-3  # Prevents the unused-side slack singularity
+
+    n_sbx = len(ocp.constraints.idxsbx)
+    # acados stacks the slacks as [sbu, sbx, sg, sh]; only sbx and sh here.
+    vel_l1 = np.ones(n_sbx) * VEL_L1_penalty
+    vel_l2 = np.ones(n_sbx) * VEL_L2_penalty
+    # Only one side of each h row is a real bound: the ellipses are bounded
+    # below (>= 1), the ceiling above (<= T_CEIL_TOL). The other side gets the
+    # tiny penalty.
+    h_l1 = np.array([L1_penalty] * OBS_N + [TINY_PENALTY])
+    h_l2 = np.array([L2_penalty] * OBS_N + [TINY_PENALTY])
+    h_u1 = np.array([TINY_PENALTY] * OBS_N + [L1_penalty])
+    h_u2 = np.array([TINY_PENALTY] * OBS_N + [L2_penalty])
 
     # 1. Stage Constraints
     model.con_h_expr = vertcat(*h_expr_list)
@@ -266,34 +303,33 @@ def setup_spline_tracking_ocp(x0, params, Tf, N_horizon) -> AcadosOcpSolver:
     ocp.constraints.lh = np.array([1.0] * OBS_N + [-1e10])
     ocp.constraints.uh = np.array([1e10] * OBS_N + [T_CEIL_TOL])
 
-    # Only the obstacle rows are softened; the ceiling stays hard.
-    ocp.constraints.idxsh = np.arange(0, OBS_N)
+    # Obstacles and the ceiling are all soft. The ceiling especially: the path
+    # parameter is a state, so a plant that has already crossed the boundary
+    # cannot be pulled back within one shooting interval (t only moves at
+    # DT_MIN..DT_MAX), and a hard row there took the whole solver down.
+    ocp.constraints.idxsh = np.arange(0, n_h)
 
-    # Apply heavy L1/L2 penalties to the stage slack variables
-    L1_penalty = 1e4
-    L2_penalty = 1e5
-    TINY_PENALTY = 1e-3  # Prevents the upper-slack singularity
-
-    ocp.cost.zl = np.ones(OBS_N) * L1_penalty
-    ocp.cost.zu = np.ones(OBS_N) * TINY_PENALTY
-    ocp.cost.Zl = np.ones(OBS_N) * L2_penalty
-    ocp.cost.Zu = np.ones(OBS_N) * TINY_PENALTY
+    ocp.cost.zl = np.concatenate([vel_l1, h_l1])
+    ocp.cost.zu = np.concatenate([vel_l1, h_u1])
+    ocp.cost.Zl = np.concatenate([vel_l2, h_l2])
+    ocp.cost.Zu = np.concatenate([vel_l2, h_u2])
 
     # ==========================================================
     # 2. Terminal Constraints
     # ==========================================================
+    # The terminal node bounds only the thrusts (hard, always reachable), so
+    # its slacks are the h rows alone.
     model.con_h_expr_e = vertcat(*h_expr_list)
 
     ocp.constraints.lh_e = np.array([1.0] * OBS_N + [-1e10])
     ocp.constraints.uh_e = np.array([1e10] * OBS_N + [T_CEIL_TOL])
 
-    # Soft constraint indices for terminal (obstacles start at index 0 now)
-    ocp.constraints.idxsh_e = np.arange(0, OBS_N)
+    ocp.constraints.idxsh_e = np.arange(0, n_h)
 
-    ocp.cost.zl_e = np.ones(OBS_N) * L1_penalty
-    ocp.cost.zu_e = np.ones(OBS_N) * TINY_PENALTY
-    ocp.cost.Zl_e = np.ones(OBS_N) * L2_penalty
-    ocp.cost.Zu_e = np.ones(OBS_N) * TINY_PENALTY
+    ocp.cost.zl_e = h_l1
+    ocp.cost.zu_e = h_u1
+    ocp.cost.Zl_e = h_l2
+    ocp.cost.Zu_e = h_u2
 
     ocp.parameter_values = params
 
