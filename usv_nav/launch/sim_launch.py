@@ -66,12 +66,12 @@ def generate_launch_description():
         remappings=USV_REMAPS,
         parameters=[
             # x min, x max, y min, y max
-            {"bouncing_area": [-15.0, 15.0, -10.0, 10.0]},
+            {"bouncing_area": [-15.0, 15.0, -15.0, 15.0]},
             {"marker_scale": 0.05},
             {"max_vel": 1.5},
             # gz sim real time factor (1.0 with the dynamic model)
-            {"time_scale": 0.6},
-            {"n_dyn_obs": 3},
+            {"time_scale": 0.95},
+            {"n_dyn_obs": 6},
             {"dummy_obs_pos": [1000.0, 1000.0]},
         ],
     )

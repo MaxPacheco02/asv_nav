@@ -24,7 +24,7 @@ public:
     prefix_ = this->declare_parameter<std::string>("model_prefix", "obs_");
     mesh_ = this->declare_parameter<std::string>("mesh",
                                                  "file://duck/meshes/duck.dae");
-    mesh_scale_ = this->declare_parameter<double>("mesh_scale", 1.0);
+    mesh_scale_ = this->declare_parameter<double>("mesh_scale", 0.5);
     // Offset from the model origin to the mesh origin, [x, y, z, roll]
     mesh_offset_ = this->declare_parameter<std::vector<double>>(
         "mesh_offset", std::vector<double>{0.0, 0.0, 0.1, 1.5708});
