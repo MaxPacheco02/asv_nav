@@ -41,6 +41,10 @@ public:
     max_vel = this->get_parameter("max_vel").as_double();
     this->declare_parameter<double>("marker_scale", 1.0);
     marker_scale = this->get_parameter("marker_scale").as_double();
+    // Obstacles advance dt * time_scale per 50 ms tick. Set it to the gz sim
+    // real time factor so they move at their v_x, v_y in sim time.
+    this->declare_parameter<double>("time_scale", 1.0);
+    time_scale = this->get_parameter("time_scale").as_double();
     this->declare_parameter<std::vector<double>>("bouncing_area",
                                                  std::vector<double>{});
     auto bouncing_area = this->get_parameter("bouncing_area").as_double_array();
@@ -200,6 +204,7 @@ private:
 
   double max_vel{10.0};
   double marker_scale{1.0};
+  double time_scale{1.0};
   // Obstacles published on /mpc/near_obs. The mpc_node (asv_control, usv_nav)
   // reads exactly N_OBS = 3 of them, so shorter lists are padded with dummies.
   static constexpr size_t near_obs_n{3};
@@ -294,7 +299,7 @@ private:
   }
 
   void update_dyn() {
-    double dt = 0.05;
+    double dt = 0.05 * time_scale;
     for (size_t i = 0; i < dyn_obs.size(); i++) {
       dyn_obs[i][0] += dyn_obs[i][2] * dt;
       dyn_obs[i][1] += dyn_obs[i][3] * dt;

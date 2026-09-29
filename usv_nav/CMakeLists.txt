@@ -80,7 +80,18 @@ add_executable(mpc_node src/mpc_node.cpp ${ACADOS_GENERATED_SOURCES})
 ament_target_dependencies(mpc_node ${DEPENDENCIES})
 target_link_libraries(mpc_node asv_control::catmul_rom acados hpipm blasfeo m)
 
-install(TARGETS mpc_node dynamic_model_node aitsmc_node
+# ========================
+# ||| gz Obstacle Node |||
+# ========================
+
+find_package(gz-transport13 REQUIRED)
+find_package(gz-msgs10 REQUIRED)
+
+add_executable(gz_obstacle_node src/gz_obstacle_node.cpp)
+ament_target_dependencies(gz_obstacle_node rclcpp geometry_msgs asv_interfaces)
+target_link_libraries(gz_obstacle_node gz-transport13::core gz-msgs10::gz-msgs10)
+
+install(TARGETS mpc_node dynamic_model_node aitsmc_node gz_obstacle_node
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch rviz scripts DESTINATION share/${PROJECT_NAME})

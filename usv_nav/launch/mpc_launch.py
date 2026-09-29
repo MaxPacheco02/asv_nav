@@ -21,8 +21,8 @@ def generate_launch_description():
             {"w_sway": 0.001},
             {"w_yaw": 0.001},
             {"terminal_w": 100.0},
-            {"avoidance_w": 0.10},
-            {"mpc_tf_init": 10.0},
+            {"avoidance_w": 1.0},
+            {"mpc_tf_init": 5.0},
             # Racing mode (worse tracking but fast):
             # {"w_along": 30.0},
             # {"w_cross": 5.0},

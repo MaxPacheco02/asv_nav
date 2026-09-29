@@ -21,6 +21,7 @@
 
     <scene>
       <ambient>1.0 1.0 1.0</ambient>
+      <grid>false</grid>
       <background>0.8 0.8 0.8</background>
       <sky></sky>
     </scene>
@@ -31,6 +32,7 @@
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.6 0.6 0.6 1</specular>
       <direction>-0.5 0.1 -0.9</direction>
+      <visualize>false</visualize>
     </light>
 
     <include>
@@ -44,11 +46,15 @@
       <uri>model://usv</uri>
     </include>
 
+    <!-- Obstacles are spawned and teleported from /mpc/obs by
+         usv_nav's gz_obstacle_node (no physics). To simulate usv2 again,
+         re-add it here and its topics in the gazebo_launch.py bridge:
     <include>
       <name>usv2</name>
       <pose>-3 3 0.1 0 0 0</pose>
       <uri>model://usv2</uri>
     </include>
+    -->
 
   </world>
 </sdf>

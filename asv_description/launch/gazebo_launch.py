@@ -31,10 +31,10 @@ def generate_launch_description():
         arguments=[
             "/model/usv/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
             "/model/usv/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
-            "/model/usv2/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
-            "/model/usv2/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
+            # "/model/usv2/joint/left_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
+            # "/model/usv2/joint/right_engine_propeller_joint/cmd_thrust@std_msgs/msg/Float64@gz.msgs.Double",
             "/gz_sim/odometry@nav_msgs/msg/Odometry@gz.msgs.OdometryWithCovariance",
-            "/gz_sim2/odometry@nav_msgs/msg/Odometry@gz.msgs.OdometryWithCovariance",
+            # "/gz_sim2/odometry@nav_msgs/msg/Odometry@gz.msgs.OdometryWithCovariance",
             # '/lidar@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
             # "/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
             # "/zed_rgbd/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",

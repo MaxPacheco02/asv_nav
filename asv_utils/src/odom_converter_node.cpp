@@ -13,6 +13,7 @@
 #include <cmath>
 #include <algorithm>
 
+#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
@@ -49,6 +50,11 @@ public:
       std::bind(&OdomConverterNode::obs_odom_cb, this, _1));
 
     obsOdomPub = this->create_publisher<nav_msgs::msg::Odometry>("/usv2/state/odom", 10);
+
+    // gz world position of the zero (ROS world = gz world - zero), latched so
+    // late subscribers (gz_obstacle_node) get it
+    zeroPub = this->create_publisher<geometry_msgs::msg::Point>(
+      "/usv/state/zero", rclcpp::QoS(1).transient_local());
 
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
@@ -87,6 +93,7 @@ protected:
       zero_y = msg->pose.pose.position.y;
       hasZeroInit = true;
       RCLCPP_INFO(get_logger(), "Setting x: %f y: %f as new zero", zero_x, zero_y);
+      publish_zero();
     }
 
     nav_msgs::msg::Odometry newOdom = *msg;
@@ -177,6 +184,14 @@ protected:
     zero_x = last_odom.pose.pose.position.x + zero_x;
     zero_y = last_odom.pose.pose.position.y + zero_y;
     RCLCPP_INFO(get_logger(), "Setting x: %f y: %f as new zero", zero_x, zero_y);
+    publish_zero();
+  }
+
+  void publish_zero() {
+    zeroPub->publish(geometry_msgs::build<geometry_msgs::msg::Point>()
+                         .x(zero_x)
+                         .y(zero_y)
+                         .z(0.0));
   }
 
 private:
@@ -185,6 +200,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr convertedOdomPub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odomSub, obsOdomSub;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr obsOdomPub;
+  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr zeroPub;
   rclcpp::Publisher<geometry_msgs::msg::Pose2D>::SharedPtr posePub;
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr velocityPub;
   rclcpp::Publisher<asv_interfaces::msg::State>::SharedPtr statePub;

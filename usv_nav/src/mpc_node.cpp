@@ -147,7 +147,7 @@ private:
   // w_avoidance
   std::vector<double> mpc_weights{0.05, 10.0, 100.0, 0.1, 0.01,
                                   0.01, 0.01, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{5.0, 0.2, 0.4, 1.0, 1.0,
+  std::vector<double> tracking_to_avoid{5.0, 0.2, 20.0, 1.0, 1.0,
                                         1.0, 1.0, 1.0,  1.0};
   std::vector<double> avoidance_weights{0.1,  5.0,  1000.0, 0.1, 0.01,
                                         0.01, 0.01, 10.0,   0.01};
@@ -163,8 +163,8 @@ private:
   // states, not just OCP params.
   static constexpr double obs_reorder_threshold = 2.0;
 
-  double tracking_weights_dynamics[N_WP]{1.0, 1.0, 1.0,  1.0, 1.0,
-                                         1.0,  1.0,  1.0, 1.0};
+  double tracking_weights_dynamics[N_WP]{1.0, 1.0, 1.0, 1.0, 1.0,
+                                         1.0, 1.0, 1.0, 1.0};
   int warmup_count{0};
   static constexpr int WARMUP_ITERS = 5;
 
@@ -311,7 +311,6 @@ private:
       tf2::Quaternion q;
       q.setRPY(0, 0, xtraj[i * NX + 2]);
       tmp_pose.pose.orientation = tf2::toMsg(q);
-
 
       for (int j = 0; j < 3; j++) {
         obs_pose.pose.position.x = xtraj[i * NX + 7 + j * 2];
@@ -535,8 +534,8 @@ private:
     marker.color.a = 0.5;
 
     // Effective dimensions from Python script
-    double A_ELL_EFF = 2.5; // 1.5 length + safety radius
-    double B_ELL_EFF = 1.5; // 0.5 width + safety radius
+    double A_ELL_EFF = 2.0; // 1.5 length + safety radius
+    double B_ELL_EFF = 1.0; // 0.5 width + safety radius
 
     for (int i = 0; i <= ellipse_points; i++) {
       // Calculate the angle for this point

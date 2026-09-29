@@ -31,7 +31,7 @@ WARMUP_STEPS = 5
 A_ELLIPSE = 1.50  # longitudinal (bow-stern)
 B_ELLIPSE = 0.50  # lateral (beam)
 ELLIPSE_OFFSET = 0.0  # shift centre fore/aft if COG isn't midship
-R_SAFE_ELLIPSE = 2.0  # extra buffer added to both axes
+R_SAFE_ELLIPSE = 0.5  # extra buffer added to both axes
 
 A_ELL_EFF = A_ELLIPSE + R_SAFE_ELLIPSE
 B_ELL_EFF = B_ELLIPSE + R_SAFE_ELLIPSE
@@ -150,8 +150,9 @@ def _build_residuals(model, terminal: bool):
     pieces = [
         scale * ca.sqrt(w_cross) * (x_pos - s_x),
         scale * ca.sqrt(w_cross) * (y_pos - s_y),
-        scale * ca.sqrt(w_along) * (x_pos - s_la_x),
-        scale * ca.sqrt(w_along) * (y_pos - s_la_y),
+        # scale * ca.sqrt(w_along) * (x_pos - s_la_x),
+        # scale * ca.sqrt(w_along) * (y_pos - s_la_y),
+        scale * ca.sqrt(w_along) * (t_la_param - t_param),
         # scale * ca.sqrt(w_along) * (s_x - s_la_x),
         # scale * ca.sqrt(w_along) * (s_y - s_la_y),
         scale * ca.sqrt(w_heading) * sin((psi - psi_ref) / 2),

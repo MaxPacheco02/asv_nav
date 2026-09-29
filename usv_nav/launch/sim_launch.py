@@ -33,7 +33,28 @@ def generate_launch_description():
         remappings=USV_REMAPS,
         parameters=[
             # Same control points as the usv_mpc.py scenario
-            {"waypoints": [0.0, 0.0, 0.3, 0.0, 3.0, 5.0, 7.0, 0.0, 6.0, -5.0, 7.0, -8.0, 1.0, -5.0, 0.5, -1.0, 0.0, -1.0]},
+            {
+                "waypoints": [
+                    0.0,
+                    0.0,
+                    0.3,
+                    0.0,
+                    3.0,
+                    5.0,
+                    7.0,
+                    0.0,
+                    6.0,
+                    -5.0,
+                    7.0,
+                    -8.0,
+                    1.0,
+                    -5.0,
+                    0.5,
+                    -1.0,
+                    0.0,
+                    -1.0,
+                ]
+            },
             {"marker_scale": 0.05},
             {"lookahead": 3.0},
         ],
@@ -45,12 +66,21 @@ def generate_launch_description():
         remappings=USV_REMAPS,
         parameters=[
             # x min, x max, y min, y max
-            {"bouncing_area": [-15.0, 20.0, -10.0, 35.0]},
+            {"bouncing_area": [-15.0, 15.0, -10.0, 10.0]},
             {"marker_scale": 0.05},
-            {"max_vel": 1.0},
-            {"n_dyn_obs": 2},
+            {"max_vel": 1.5},
+            # gz sim real time factor (1.0 with the dynamic model)
+            {"time_scale": 0.6},
+            {"n_dyn_obs": 3},
             {"dummy_obs_pos": [1000.0, 1000.0]},
         ],
+    )
+
+    # Teleports gz models to the obstacles on /mpc/obs (only with Gazebo)
+    gz_obstacle_node = Node(
+        package="usv_nav",
+        executable="gz_obstacle_node",
+        output="screen",
     )
 
     return LaunchDescription(
@@ -59,6 +89,7 @@ def generate_launch_description():
             # dynamic_model_node,
             # or Gazebo
             include("usv_nav", "gazebo_launch.py"),
+            gz_obstacle_node,
             #
             #
             include("usv_nav", "aitsmc_launch.py"),
