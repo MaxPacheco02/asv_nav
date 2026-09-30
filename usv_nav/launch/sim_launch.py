@@ -70,9 +70,10 @@ def generate_launch_description():
             {"marker_scale": 0.05},
             {"max_vel": 1.5},
             # gz sim real time factor (1.0 with the dynamic model)
-            {"time_scale": 0.95},
+            {"time_scale": 0.65},
             {"n_dyn_obs": 6},
             {"dummy_obs_pos": [1000.0, 1000.0]},
+            {"static_obs": [7.0, 0.01, 0.0, -4.50]},
         ],
     )
 

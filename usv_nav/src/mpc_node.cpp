@@ -147,15 +147,15 @@ private:
   // w_avoidance
   std::vector<double> mpc_weights{0.05, 10.0, 100.0, 0.1, 0.01,
                                   0.01, 0.01, 10.0,  0.0};
-  std::vector<double> tracking_to_avoid{5.0, 0.2, 20.0, 1.0, 1.0,
-                                        1.0, 1.0, 1.0,  1.0};
+  std::vector<double> tracking_to_avoid{20.0, 0.1, 1.0,  1.0, 1.0,
+                                        1.0,  1.0, 10.0, 1.0};
   std::vector<double> avoidance_weights{0.1,  5.0,  1000.0, 0.1, 0.01,
                                         0.01, 0.01, 10.0,   0.01};
 
   // map input [min,max] to output [min,max]
   static constexpr double ae_start = 1.0, ae_end = 0.5;
   static constexpr double min_ce = 0.5, max_ce = 3.0;
-  static constexpr double avoidance_start = 3.0, avoidance_end = 1.0;
+  static constexpr double avoidance_start = 5.0, avoidance_end = 2.0;
   // Max weight change per 50 ms control cycle. w_avo ramps,
   // preventing the RTI QP from seeing a discontinuous cost Hessian.
   static constexpr double max_w_rate = 1.0;

@@ -64,6 +64,19 @@ public:
       n_dyn_obs = 0;
     }
 
+    // Static obstacles as a flat [x1, y1, x2, y2, ...] list (ROS 2 params
+    // can't hold nested arrays). Empty by default.
+    this->declare_parameter<std::vector<double>>("static_obs",
+                                                 std::vector<double>{});
+    auto static_obs = this->get_parameter("static_obs").as_double_array();
+    if (static_obs.size() % 2 != 0) {
+      RCLCPP_WARN(this->get_logger(),
+                  "static_obs needs [x, y] pairs but has %zu values. Dropping "
+                  "the last one",
+                  static_obs.size());
+      static_obs.pop_back();
+    }
+
     // Where the padding obstacles are parked. It must sit well outside the
     // operating area, but not so far that the MPC's ellipse constraint
     // ((d / a_ellipse)^2, bounded above by 1e6) blows up.
@@ -175,6 +188,14 @@ public:
       marker_arr.markers.push_back(
           build_marker(marker_arr.markers.size(), x, y, std::atan2(v_y, v_x)));
     }
+
+    for (size_t i = 0; i + 1 < static_obs.size(); i += 2) {
+      double x = static_obs[i];
+      double y = static_obs[i + 1];
+      obs_.obs_list.push_back(build_obs(x, y, 0.0, 0.0));
+      marker_arr.markers.push_back(
+          build_marker(marker_arr.markers.size(), x, y, 0.0, "static"));
+    }
   }
 
 private:
@@ -223,6 +244,7 @@ private:
       {"boat", MarkerProps{2, 1.0, 1.0, 1.0, 0}},
       {"marker", MarkerProps{0, 20.0, 5.0, 5.0, 0}},
       {"picture", MarkerProps{1, 0.5, 0.5, 0.5, 0.25}},
+      {"static", MarkerProps{2, 10.0, 10.0, 10.0, 0}},
   };
 
   asv_interfaces::msg::Obstacle build_obs(double x, double y, double v_x,
@@ -239,6 +261,12 @@ private:
 
   visualization_msgs::msg::Marker build_marker(int id, double x, double y,
                                                double ang) {
+    return build_marker(id, x, y, ang, type);
+  }
+
+  visualization_msgs::msg::Marker build_marker(int id, double x, double y,
+                                               double ang,
+                                               const std::string &m_type) {
     visualization_msgs::msg::Marker marker;
 
     int r{color_list[color][0]}, g{color_list[color][1]},
@@ -252,14 +280,15 @@ private:
         std_msgs::build<std_msgs::msg::ColorRGBA>().r(r).g(g).b(b).a(a);
     marker.action = 0;
     marker.id = id;
-    marker.type = marker_type[type].type;
+    const MarkerProps &props = marker_type.at(m_type);
+    marker.type = props.type;
     marker.scale = geometry_msgs::build<geometry_msgs::msg::Vector3>()
-                       .x(marker_type[type].x * marker_scale)
-                       .y(marker_type[type].y * marker_scale)
-                       .z(marker_type[type].z * marker_scale);
+                       .x(props.x * marker_scale)
+                       .y(props.y * marker_scale)
+                       .z(props.z * marker_scale);
     marker.pose.position.x = x;
     marker.pose.position.y = y;
-    marker.pose.position.z = marker_type[type].z_trans;
+    marker.pose.position.z = props.z_trans;
     marker.pose.orientation = tf2::toMsg(q);
     return marker;
   }
